@@ -11,6 +11,7 @@ A save editor for Animal Crossing: New Horizons that runs entirely in your brows
 - **Home storage:** the same picture picker for every storage slot, add to the first free slot, expand to the largest size
 - **Unlock:** all DIY recipes and all reactions
 - **Island:** donate everything to the museum, remove weeds, fill holes, pick up branches, water all flowers, set this week's turnip prices
+- **Map:** an overview of the whole island and a detail view with pictures; place items from the picture picker (big items cover all their tiles, rotation included), replace or remove anything, on the ground or on top of furniture, with undo
 - **Residents:** swap a villager for any other from a picture grid (house, furniture and clothes included), edit catchphrases, mark villagers as moving out, max friendship
 - **Open a save folder** in Chrome or Edge and save straight back into it, or **open a ZIP** in any browser and get a new ZIP
 - A backup ZIP of the original files is downloaded before the first write

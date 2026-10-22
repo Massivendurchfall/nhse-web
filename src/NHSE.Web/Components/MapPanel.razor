@@ -1,0 +1,532 @@
+@implements IAsyncDisposable
+@inject SaveSession Session
+@inject ItemCatalog Catalog
+@inject IJSRuntime JS
+
+<section class="card">
+    <header class="card-head">
+        <h3>@L.T("Karte", "Map")</h3>
+        <div class="segmented">
+            <button class="@(layerIndex == 0 ? "active" : "")" @onclick="() => SetLayer(0)">@L.T("Boden", "Ground")</button>
+            <button class="@(layerIndex == 1 ? "active" : "")" @onclick="() => SetLayer(1)">@L.T("Auf Möbeln", "On furniture")</button>
+        </div>
+    </header>
+
+    <div class="map-toolbar">
+        <div class="segmented">
+            <button class="@(mode == Mode.Look ? "active" : "")" @onclick="() => SetMode(Mode.Look)">@L.T("Ansehen", "Look")</button>
+            <button class="@(mode == Mode.Place ? "active" : "")" @onclick="() => SetMode(Mode.Place)">@L.T("Platzieren", "Place")</button>
+            <button class="@(mode == Mode.Erase ? "active" : "")" @onclick="() => SetMode(Mode.Erase)">@L.T("Entfernen", "Remove")</button>
+        </div>
+        <div class="segmented">
+            <button class="@(across == 16 ? "active" : "")" @onclick="() => Zoom(16)">@L.T("Nah", "Close")</button>
+            <button class="@(across == 32 ? "active" : "")" @onclick="() => Zoom(32)">@L.T("Weit", "Wide")</button>
+        </div>
+        <button class="small" @onclick="Undo" disabled="@(undo.Count == 0)">&#x21B6; @L.T("Rückgängig", "Undo")</button>
+    </div>
+
+    @* one bar for the current item or the tapped tile, so the map never moves *@
+    <div class="map-bar">
+        @if (mode == Mode.Place)
+        {
+            @if (brush is null)
+            {
+                <button class="primary" @onclick="() => picking = Picking.Brush">@L.T("Gegenstand wählen", "Choose an item")</button>
+                <span class="hint">@L.T("Danach tippst du auf der Karte, wo er hin soll.", "Then tap on the map where it should go.")</span>
+            }
+            else
+            {
+                var (w, h) = IslandMap.Footprint(brush);
+                <ItemImage Src="@Picture(brush)" Alt="@GameInfo.Strings.GetItemName(brush)" />
+                <div class="brush-text">
+                    <strong>@GameInfo.Strings.GetItemName(brush)</strong>
+                    <span class="hint">@L.T($"{w} x {h} Felder", $"{w} x {h} tiles")</span>
+                </div>
+                <button class="small" @onclick="Rotate">&#x21BB; @L.T("Drehen", "Rotate")</button>
+                <button class="small" @onclick="() => picking = Picking.Brush">@L.T("Anderer Gegenstand", "Other item")</button>
+            }
+        }
+        else if (mode == Mode.Look && selected is { } sel)
+        {
+            var tile = map!.Layer(layerIndex).GetTile(sel.RelX, sel.RelY);
+            @if (tile.IsNone)
+            {
+                <span class="plus">+</span>
+                <div class="brush-text">
+                    <strong>@L.T("Leeres Feld", "Empty tile")</strong>
+                    <span class="hint">@Position(sel)</span>
+                </div>
+                <button class="small" @onclick="() => picking = Picking.Replace">@L.T("Hier etwas hinlegen", "Put something here")</button>
+            }
+            else
+            {
+                <ItemImage Src="@Picture(tile)" Alt="@GameInfo.Strings.GetItemName(tile)" />
+                <div class="brush-text">
+                    <strong>@ItemName(tile)</strong>
+                    <span class="hint">@Position(sel)</span>
+                </div>
+                @if (tile.ItemId < Item.FieldItemMin)
+                {
+                    <button class="small" @onclick="() => picking = Picking.Replace">@L.T("Ersetzen", "Replace")</button>
+                }
+                <button class="small danger" @onclick="RemoveSelected">@L.T("Entfernen", "Remove")</button>
+            }
+        }
+        else
+        {
+            <span class="hint">@(mode == Mode.Erase
+                ? L.T("Tippe auf einen Gegenstand, um ihn zu entfernen.", "Tap an item to remove it.")
+                : L.T("Tippe auf ein Feld, um zu sehen, was dort liegt.", "Tap a tile to see what lies there."))</span>
+        }
+    </div>
+
+    <div class="map-layout">
+        <div class="map-overview">
+            <canvas @ref="overview"></canvas>
+            <p class="hint">@L.T("Tippe auf die Übersicht, um dorthin zu springen.", "Tap the overview to jump there.")</p>
+        </div>
+        <div class="map-detail">
+            <canvas @ref="detail"></canvas>
+            <div class="map-nav">
+                <button class="small" @onclick="() => Move(-1, 0)" aria-label="@L.T("Nach links", "Left")">&#x25C0;</button>
+                <button class="small" @onclick="() => Move(0, -1)" aria-label="@L.T("Nach oben", "Up")">&#x25B2;</button>
+                <button class="small" @onclick="() => Move(0, 1)" aria-label="@L.T("Nach unten", "Down")">&#x25BC;</button>
+                <button class="small" @onclick="() => Move(1, 0)" aria-label="@L.T("Nach rechts", "Right")">&#x25B6;</button>
+            </div>
+        </div>
+    </div>
+
+    @if (message is not null)
+    {
+        <p class="hint center">@message</p>
+    }
+    <p class="hint">@L.T("Stell nichts ins Wasser, auf Klippen oder in Gebäude, das mag das Spiel nicht. Bäume, Blumen und Felsen kannst du hier entfernen, aber nicht neu setzen.",
+                         "Do not put anything into water, on cliffs or into buildings, the game does not like that. Trees, flowers and rocks can be removed here but not placed.")</p>
+</section>
+
+@if (picking != Picking.None)
+{
+    <ItemPickerDialog Title="@(picking == Picking.Brush ? L.T("Was möchtest du platzieren?", "What do you want to place?") : L.T("Was soll hier liegen?", "What should lie here?"))"
+                      Current="@(picking == Picking.Replace && selected is { } s ? map!.Layer(layerIndex).GetTile(s.RelX, s.RelY) : brush)"
+                      Picked="Picked" Closed="() => picking = Picking.None" />
+}
+
+@code {
+    private enum Mode { Look, Place, Erase }
+    private enum Picking { None, Brush, Replace }
+    private readonly record struct Spot(int RelX, int RelY);
+
+    private const int UndoDepth = 30;
+
+    private IslandMap? map;
+    private ElementReference overview;
+    private ElementReference detail;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<MapPanel>? self;
+
+    private Mode mode = Mode.Look;
+    private Picking picking;
+    private int layerIndex;
+    private int viewX;
+    private int viewY;
+    private int across = 32;
+    private Item? brush;
+    private Spot? selected;
+    private string? message;
+    private readonly LinkedList<ulong[]> undo = new();
+
+    private MainSave Main => Session.Save!.Main;
+
+    protected override void OnInitialized()
+    {
+        map = new IslandMap(Main);
+        // start on the acre in the middle of the island
+        viewX = (map.Width / 2) - 16;
+        viewY = (map.Height / 2) - 16;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+        await Catalog.EnsureLoadedAsync();
+        module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/mapview.js");
+        self = DotNetObjectReference.Create(this);
+        await module.InvokeVoidAsync("initMap", overview, detail, self, map!.Width, map.Height, map.TerrainPixels());
+        across = await module.InvokeAsync<int>("tilesAcross", detail);
+        ClampView();
+        await DrawItems();
+        await DrawView();
+    }
+
+    private Task DrawItems()
+    {
+        var buildings = map!.Buildings.Where(b => b.BuildingType != 0).Select(b => new[] { (int)b.X, (int)b.Y });
+        return module?.InvokeVoidAsync("setItems", map.ItemPixels(layerIndex), buildings).AsTask() ?? Task.CompletedTask;
+    }
+
+    private Task DrawView()
+    {
+        if (module is null)
+            return Task.CompletedTask;
+        var layer = map!.Layer(layerIndex);
+        var tiles = new List<object[]>();
+        // roots up to 8 tiles above or left of the view can still reach into it
+        for (int y = viewY - 8; y < viewY + across; y++)
+        {
+            for (int x = viewX - 8; x < viewX + across; x++)
+            {
+                if (!map.TryGetRelative(x, y, out var relX, out var relY))
+                    continue;
+                var tile = layer.GetTile(relX, relY);
+                if (tile.IsNone || !tile.IsRoot)
+                    continue;
+                var (w, h) = IslandMap.Footprint(tile);
+                if (x + w <= viewX || y + h <= viewY)
+                    continue;
+                tiles.Add([x, y, w, h, Picture(tile)]);
+            }
+        }
+
+        int[]? selection = null;
+        if (selected is { } s)
+        {
+            var tile = layer.GetTile(s.RelX, s.RelY);
+            var (w, h) = tile.IsNone ? (1, 1) : IslandMap.Footprint(tile);
+            var (x, y) = map.GetAbsolute(s.RelX, s.RelY);
+            selection = [x, y, w, h];
+        }
+        object[]? cursor = null;
+        if (mode == Mode.Place && brush is not null)
+        {
+            var (w, h) = IslandMap.Footprint(brush);
+            cursor = [w, h, brush.IsFieldItem, Picture(brush)];
+        }
+        return module.InvokeVoidAsync("setView", viewX, viewY, across, tiles, selection, cursor).AsTask();
+    }
+
+    private void ClampView()
+    {
+        viewX = Math.Clamp(viewX, 0, map!.Width - across);
+        viewY = Math.Clamp(viewY, 0, map.Height - across);
+    }
+
+    [JSInvokable]
+    public async Task OnOverviewClick(int x, int y)
+    {
+        viewX = x - (across / 2);
+        viewY = y - (across / 2);
+        ClampView();
+        await DrawView();
+    }
+
+    // keeps the middle of the view in place
+    private async Task Zoom(int tiles)
+    {
+        viewX += (across - tiles) / 2;
+        viewY += (across - tiles) / 2;
+        across = tiles;
+        ClampView();
+        await DrawView();
+    }
+
+    private async Task Move(int dx, int dy)
+    {
+        viewX += dx * across / 2;
+        viewY += dy * across / 2;
+        ClampView();
+        await DrawView();
+    }
+
+    [JSInvokable]
+    public async Task OnDetailClick(int x, int y)
+    {
+        message = null;
+        if (!map!.TryGetRelative(x, y, out var relX, out var relY))
+        {
+            message = L.T("Dort ist Meer oder Strandrand, da kann nichts liegen.", "That is sea or the edge of the beach, nothing can lie there.");
+            StateHasChanged();
+            return;
+        }
+        var layer = map.Layer(layerIndex);
+        switch (mode)
+        {
+            case Mode.Look:
+                selected = RootOf(layer, relX, relY);
+                break;
+            case Mode.Erase:
+                var root = RootOf(layer, relX, relY);
+                if (layer.GetTile(root.RelX, root.RelY).IsNone)
+                    break;
+                Remember();
+                Delete(layer, root);
+                await Changed();
+                break;
+            case Mode.Place when brush is null:
+                picking = Picking.Brush;
+                break;
+            case Mode.Place:
+                var placed = new Item(brush.RawValue);
+                if (Place(layer, placed, relX, relY))
+                    await Changed();
+                break;
+        }
+        await DrawView();
+        StateHasChanged();
+    }
+
+    // an extension tile of a big item points back to the tile the item starts on
+    private static Spot RootOf(LayerFieldItem layer, int relX, int relY)
+    {
+        var tile = layer.GetTile(relX, relY);
+        if (!tile.IsExtension)
+            return new Spot(relX, relY);
+        var x = relX - tile.ExtensionX;
+        var y = relY - tile.ExtensionY;
+        layer.TileInfo.ClampInside(ref x, ref y);
+        var root = layer.GetTile(x, y);
+        return root.IsRoot && root.ItemId == tile.ExtensionItemId ? new Spot(x, y) : new Spot(relX, relY);
+    }
+
+    private static void Delete(LayerFieldItem layer, Spot spot)
+    {
+        var tile = layer.GetTile(spot.RelX, spot.RelY);
+        if (tile.IsRoot)
+            layer.DeleteExtensionTiles(tile, spot.RelX, spot.RelY);
+        tile.Delete();
+    }
+
+    // Same checks as NHSE's field item editor: plants snap to even tiles, nothing is overwritten.
+    private bool Place(LayerFieldItem layer, Item item, int relX, int relY)
+    {
+        if (item.IsFieldItem)
+        {
+            relX &= ~1;
+            relY &= ~1;
+        }
+        switch (layer.IsOccupied(item, relX, relY))
+        {
+            case PlacedItemPermission.OutOfBounds:
+                message = L.T("Das passt dort nicht mehr auf die Insel.", "That does not fit on the island there.");
+                return false;
+            case PlacedItemPermission.Collision:
+                message = L.T("Dort liegt schon etwas. Entferne es zuerst oder such dir freie Felder.",
+                    "Something is already there. Remove it first or pick free tiles.");
+                return false;
+        }
+        Remember();
+        layer.SetExtensionTiles(item, relX, relY);
+        layer.GetTile(relX, relY).CopyFrom(item);
+        selected = new Spot(relX, relY);
+        return true;
+    }
+
+    private async Task Picked(Item item)
+    {
+        var target = picking;
+        picking = Picking.None;
+        message = null;
+        if (target == Picking.Brush)
+        {
+            brush = item;
+            mode = Mode.Place;
+            await DrawView();
+            return;
+        }
+        if (selected is not { } spot)
+            return;
+        // replace: take the old item away first, put it back if the new one does not fit
+        var layer = map!.Layer(layerIndex);
+        var before = map.Snapshot();
+        Delete(layer, spot);
+        if (Place(layer, item, spot.RelX, spot.RelY))
+        {
+            undo.RemoveFirst(); // Place remembered the state without the old item
+            undo.AddFirst(before);
+            await Changed();
+        }
+        else
+        {
+            map.Restore(before);
+        }
+        await DrawView();
+    }
+
+    private async Task RemoveSelected()
+    {
+        if (selected is not { } spot)
+            return;
+        Remember();
+        Delete(map!.Layer(layerIndex), spot);
+        await Changed();
+        await DrawView();
+    }
+
+    private async Task Rotate()
+    {
+        if (brush is null)
+            return;
+        brush.Rotation = (brush.Rotation + 1) & 3;
+        await DrawView();
+    }
+
+    private async Task SetMode(Mode value)
+    {
+        mode = value;
+        message = null;
+        if (mode == Mode.Place && brush is null)
+            picking = Picking.Brush;
+        await DrawView();
+    }
+
+    private async Task SetLayer(int index)
+    {
+        layerIndex = index;
+        selected = null;
+        await DrawItems();
+        await DrawView();
+    }
+
+    private void Remember()
+    {
+        undo.AddFirst(map!.Snapshot());
+        if (undo.Count > UndoDepth)
+            undo.RemoveLast();
+    }
+
+    private async Task Undo()
+    {
+        if (undo.First is not { } last)
+            return;
+        undo.RemoveFirst();
+        map!.Restore(last.Value);
+        message = null;
+        await Changed();
+        await DrawView();
+    }
+
+    private async Task Changed()
+    {
+        map!.WriteTo(Main);
+        Session.MarkDirty();
+        await DrawItems();
+    }
+
+    private string Position(Spot spot)
+    {
+        var (x, y) = map!.GetAbsolute(spot.RelX, spot.RelY);
+        var acre = $"{(char)('A' + (y / 32) - 1)}{x / 32}";
+        return L.T($"Feld {spot.RelX}, {spot.RelY} im Bereich {acre}", $"Tile {spot.RelX}, {spot.RelY} in acre {acre}");
+    }
+
+    private static string ItemName(Item tile)
+    {
+        // NHSE only has internal names like "PltFlwRose3Red" for plants and rocks
+        if (tile.ItemId >= Item.FieldItemMin && FieldItemList.Items.TryGetValue(tile.ItemId, out var def))
+            return tile.ItemId is >= 0xEC9C and <= 0xECA0 ? L.T("Geldbaum", "Money tree") : FieldName(def.Kind);
+        return GameInfo.Strings.GetItemName(tile);
+    }
+
+    private string Picture(Item item) => item.ItemId >= Item.FieldItemMin
+        ? FieldIcon(item) ?? ItemCatalog.Fallback
+        : Catalog.PictureOf(item);
+
+    // Trees, flowers, weeds, rocks and fences have no catalog picture; NHSE's menu icons stand in.
+    private static string? FieldIcon(Item item)
+    {
+        if (item.ItemId is >= 0xEC9C and <= 0xECA0)
+            return "menuicon/PltMoney.png";
+        if (!FieldItemList.Items.TryGetValue(item.ItemId, out var def))
+            return null;
+        var kind = def.Kind.ToString();
+        var icon = kind switch
+        {
+            _ when kind.StartsWith("Fence") => "Fence",
+            _ when kind.StartsWith("LadderKit") => "FixedLadder",
+            _ when kind.StartsWith("PltWeed") => "PltWeedLight",
+            _ when kind.StartsWith("Stone") => "OreStone",
+            "PltBushAzalea" => "PltAzaleaPink",
+            "PltBushCamellia" => "PltBushCamelliaRed",
+            "PltBushHibiscus" => "PltHibiscusRed",
+            "PltBushHolly" => "PltHolly",
+            "PltBushHydrangea" => "PltHydrangeaBlue",
+            "PltBushOsmanthus" => "PltBushOsmathusOrange",
+            "PltBushPlumeria" => "PltBushPlumeriaWhite",
+            "PltFlwAnemone" => "PltAnemone0",
+            "PltFlwCosmos" => "PltCosmos0",
+            "PltFlwHyacinth" => "PltHyacinth0",
+            "PltFlwLily" or "PltFlwYuri" => "PltYuri0",
+            "PltFlwMum" => "PltMum0",
+            "PltFlwPansy" => "PltPansi0",
+            "PltFlwRose" => "PltRose0",
+            "PltFlwRoseGold" => "PltGoldenRose",
+            "PltFlwTulip" => "PltTurip0",
+            "PltTreeBamboo" => "PltBamboo",
+            "PltTreeCedar" or "PltTreeCedarDeco" => "PltConifer",
+            "PltTreeOak" => "PltOak",
+            "PltTreePalm" => "PltPalm",
+            "PltVgtCarrot" => "PltCarrot",
+            "PltVgtPotato" => "PltPotato",
+            "PltVgtPumpkin" => "PltSquashOrange",
+            "PltVgtSugarcane" => "PltSugarCane",
+            "PltVgtTomato" => "PltTomato",
+            "PltVgtWheat" => "PltWheat",
+            "PltVine" => "PltVine",
+            _ => null,
+        };
+        return icon is null ? null : $"menuicon/{icon}.png";
+    }
+
+    private static string FieldName(FieldItemKind kind)
+    {
+        var name = kind.ToString();
+        return name switch
+        {
+            "PltFlwAnemone" => L.T("Anemone", "Windflower"),
+            "PltFlwCosmos" => L.T("Kosmee", "Cosmos"),
+            "PltFlwHyacinth" => L.T("Hyazinthe", "Hyacinth"),
+            "PltFlwLily" or "PltFlwYuri" => L.T("Lilie", "Lily"),
+            "PltFlwMum" => L.T("Chrysantheme", "Mum"),
+            "PltFlwPansy" => L.T("Stiefmütterchen", "Pansy"),
+            "PltFlwRose" => L.T("Rose", "Rose"),
+            "PltFlwRoseGold" => L.T("Goldene Rose", "Gold rose"),
+            "PltFlwTulip" => L.T("Tulpe", "Tulip"),
+            "PltTreeBamboo" => L.T("Bambus", "Bamboo"),
+            "PltTreeCedar" or "PltTreeCedarDeco" => L.T("Nadelbaum", "Cedar"),
+            "PltTreeOak" => L.T("Laubbaum", "Hardwood tree"),
+            "PltTreePalm" => L.T("Palme", "Palm tree"),
+            "PltVgtCarrot" => L.T("Karotte", "Carrot"),
+            "PltVgtPotato" => L.T("Kartoffel", "Potato"),
+            "PltVgtPumpkin" => L.T("Kürbis", "Pumpkin"),
+            "PltVgtSugarcane" => L.T("Zuckerrohr", "Sugarcane"),
+            "PltVgtTomato" => L.T("Tomate", "Tomato"),
+            "PltVgtWheat" => L.T("Weizen", "Wheat"),
+            "PltVine" => L.T("Ranke", "Vine"),
+            _ when name.StartsWith("Fence") => L.T("Zaun", "Fence"),
+            _ when name.StartsWith("LadderKit") => L.T("Leiter", "Ladder"),
+            _ when name.StartsWith("PltWeed") => L.T("Unkraut", "Weed"),
+            _ when name.StartsWith("Stone") => L.T("Felsen", "Rock"),
+            _ when name.StartsWith("PltBush") => L.T("Strauch", "Bush"),
+            _ when name.StartsWith("PltFlw") => L.T("Blume", "Flower"),
+            _ when name.StartsWith("PltTree") => L.T("Baum", "Tree"),
+            _ when kind == FieldItemKind.UnitIconHole => L.T("Loch", "Hole"),
+            _ => name,
+        };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (module is not null)
+            {
+                await module.InvokeVoidAsync("disposeMap");
+                await module.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        self?.Dispose();
+    }
+}

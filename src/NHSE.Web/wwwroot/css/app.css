@@ -328,6 +328,29 @@ input:focus { outline: none; border-color: var(--sea); }
 .turnip-week .hint { margin: 0; text-align: center; }
 .turnip-week input { width: 100%; }
 
+/* map */
+.segmented { display: inline-flex; background: var(--card-2); border: 2px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; }
+.segmented button { border: none; background: transparent; padding: 6px 14px; font-size: 0.9rem; }
+.segmented button.active { background: var(--sea); color: #fff; }
+.map-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0; }
+.map-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 76px;
+    background: var(--card-2); border-radius: 18px; padding: 10px 14px; margin: 10px 0;
+}
+.map-bar img { width: 52px; height: 52px; object-fit: contain; }
+.map-bar > .hint { margin: 0; }
+.brush-text { display: flex; flex-direction: column; flex: 1; min-width: 140px; }
+.brush-text .hint { margin: 0; }
+.map-bar .plus { width: 52px; text-align: center; font-size: 1.6rem; color: var(--muted); }
+.map-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 16px; align-items: start; }
+.map-overview canvas, .map-detail canvas {
+    display: block; width: 100%; border-radius: 14px; border: 2px solid var(--line);
+    image-rendering: pixelated; cursor: crosshair; touch-action: manipulation;
+}
+.map-detail canvas { aspect-ratio: 1; }
+.map-overview .hint { margin: 6px 2px 0; }
+.map-nav { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
+
 /* residents */
 .villager-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin: 12px 0 4px; }
 .villager {
@@ -393,5 +416,9 @@ footer { margin-top: 34px; color: var(--muted); font-size: 0.85rem; line-height:
     .tiles { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
     .tile img { width: 52px; height: 52px; }
     .villager-grid { grid-template-columns: repeat(2, 1fr); }
+    .map-layout { grid-template-columns: 1fr; }
+    .map-detail { order: -1; }
+    .map-overview canvas { max-width: 260px; margin: 0 auto; }
+    .map-overview .hint { text-align: center; }
     .turnip-week { grid-template-columns: auto 1fr 1fr; width: 100%; }
 }

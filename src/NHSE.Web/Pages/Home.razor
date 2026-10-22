@@ -107,6 +107,9 @@
             <button class="@(tab == Tab.Island ? "active" : "")" @onclick="() => tab = Tab.Island">
                 <img src="menuicon/PltPalm.png" alt="" />@L.T("Insel", "Island")
             </button>
+            <button class="@(tab == Tab.Map ? "active" : "")" @onclick="() => tab = Tab.Map">
+                <img src="menuicon/ToolGroundMaker.png" alt="" />@L.T("Karte", "Map")
+            </button>
             <button class="@(tab == Tab.Villagers ? "active" : "")" @onclick="() => tab = Tab.Villagers">
                 <img src="menuicon/Tent.png" alt="" />@L.T("Bewohner", "Residents")
             </button>
@@ -128,6 +131,9 @@
                 break;
             case Tab.Island:
                 <IslandPanel />
+                break;
+            case Tab.Map:
+                <MapPanel />
                 break;
             case Tab.Villagers:
                 <VillagersPanel />
@@ -172,7 +178,7 @@
 </main>
 
 @code {
-    private enum Tab { Player, Pockets, Storage, Unlock, Island, Villagers }
+    private enum Tab { Player, Pockets, Storage, Unlock, Island, Map, Villagers }
 
     private Tab tab = Tab.Player;
     private int player;
