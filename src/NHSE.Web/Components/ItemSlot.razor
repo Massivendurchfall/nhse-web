@@ -1,0 +1,30 @@
+@inject ItemCatalog Catalog
+
+@* One round inventory slot: the item's picture with its stack size, or a plus when empty. *@
+<button class="pslot @(Item.IsNone ? "empty" : "") @(Locked ? "locked" : "")" disabled="@Locked" title="@Title" @onclick="OnClick">
+    @if (Item.IsNone)
+    {
+        <span class="plus">+</span>
+    }
+    else
+    {
+        <ItemImage Src="@Catalog.PictureOf(Item)" Alt="@GameInfo.Strings.GetItemName(Item)" />
+        @if (StackOf(Item) > 1 && Item.Count > 0)
+        {
+            <span class="badge">@(Item.Count + 1)</span>
+        }
+    }
+</button>
+
+@code {
+    [Parameter, EditorRequired] public Item Item { get; set; } = null!;
+    [Parameter] public int Number { get; set; }
+    [Parameter] public bool Locked { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+
+    private string Title => Item.IsNone
+        ? L.T($"Feld {Number}, leer", $"Slot {Number}, empty")
+        : GameInfo.Strings.GetItemName(Item);
+
+    private static int StackOf(Item item) => ItemInfo.TryGetMaxStackCount(item, out var max) ? max : 1;
+}

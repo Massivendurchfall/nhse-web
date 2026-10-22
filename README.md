@@ -8,6 +8,7 @@ A save editor for Animal Crossing: New Horizons that runs entirely in your brows
 
 - **Player:** name, island name, wallet, bank and Nook Miles, with the passport photo
 - **Pockets:** pick items from a picture grid with categories, furniture variants and stack size
+- **Home storage:** the same picture picker for every storage slot, add to the first free slot, expand to the largest size
 - **Unlock:** all DIY recipes and all reactions
 - **Island:** donate everything to the museum, remove weeds, fill holes, pick up branches, water all flowers, set this week's turnip prices
 - **Residents:** swap a villager for any other from a picture grid (house, furniture and clothes included), edit catchphrases, mark villagers as moving out, max friendship

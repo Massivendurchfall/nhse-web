@@ -100,7 +100,9 @@ public sealed class SaveSession(IJSRuntime js)
                $"wallet {p.Wallet.Value}, bank {p.Bank.Value}, slot 16 {GameInfo.Strings.GetItemName(p.Pocket[15])}, " +
                $"recipes {RecipeList.Recipes.Keys.Count(k => book.GetIsKnown(k))}, reactions {p.Reactions.ManpuBit.Count(r => r != 0)}, " +
                $"villagers {string.Join(" ", villagers)}, houses {houses}, turnips buy {main.Turnips.BuyPrice} mon am {main.Turnips.SellMondayAM}, " +
-               $"museum {main.Museum.GetItems().Count(i => !i.IsNone)}, weeds {weeds}";
+               $"museum {main.Museum.GetItems().Count(i => !i.IsNone)}, weeds {weeds}, " +
+               $"storage {p.ItemChest.Count(i => !i.IsNone)} of {p.ItemChestCount}: " +
+               string.Join(", ", p.ItemChest.Where(i => !i.IsNone).Take(3).Select(i => $"{GameInfo.Strings.GetItemName(i)} x{i.Count + 1}"));
     }
 #endif
 

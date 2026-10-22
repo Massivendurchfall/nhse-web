@@ -1,0 +1,155 @@
+@inject SaveSession Session
+@inject ItemCatalog Catalog
+
+<section class="card">
+    <header class="card-head">
+        <h3>@L.T("Hauslager", "Home storage")</h3>
+        <span class="pill">@L.T($"{used} von {unlocked} Plätzen belegt", $"{used} of {unlocked} spaces used")</span>
+    </header>
+    <p class="hint">@L.T("Tippe auf ein Feld und wähle den Gegenstand per Bild aus. Mit „Hinzufügen“ landet er im ersten freien Feld.",
+                         "Tap a slot and pick the item by its picture. \"Add\" puts it into the first free slot.")</p>
+
+    <div class="buttons">
+        <button class="primary" @onclick="() => editing = Adding" disabled="@(used >= unlocked)">+ @L.T("Hinzufügen", "Add")</button>
+        @if (unlocked < MaxSpaces)
+        {
+            <button @onclick="Expand">@L.T($"Auf {MaxSpaces} Plätze erweitern", $"Expand to {MaxSpaces} spaces")</button>
+        }
+        <label class="check">
+            <input type="checkbox" checked="@onlyUsed" @onchange="e => ShowOnlyUsed(e.Value is true)" />
+            <span>@L.T("Nur belegte Felder", "Only used slots")</span>
+        </label>
+    </div>
+
+    @if (unlocked == 0)
+    {
+        <p class="hint center">@L.T("Dieser Spieler hat noch kein Lager. Das gibt es mit dem ersten Haus, oder du erweiterst es oben.",
+                                   "This player has no storage yet. It comes with the first house, or expand it above.")</p>
+    }
+    else if (Visible.Count == 0)
+    {
+        <p class="hint center">@L.T("Das Lager ist leer.", "The storage is empty.")</p>
+    }
+    else
+    {
+        <div class="pocket-grid">
+            @foreach (var index in Visible.Skip(page * PageSize).Take(PageSize))
+            {
+                var i = index;
+                <ItemSlot Item="@slots[i]" Number="@(i + 1)" OnClick="() => editing = i" />
+            }
+        </div>
+        @if (Pages > 1)
+        {
+            <nav class="pager">
+                <button class="small" @onclick="() => page--" disabled="@(page == 0)">&#x2039;</button>
+                <span>@L.T($"Seite {page + 1} von {Pages}", $"Page {page + 1} of {Pages}")</span>
+                <button class="small" @onclick="() => page++" disabled="@(page >= Pages - 1)">&#x203A;</button>
+            </nav>
+        }
+    }
+    @if (message is not null)
+    {
+        <p class="hint center">@message</p>
+    }
+</section>
+
+@if (editing != Closed)
+{
+    var adding = editing == Adding;
+    <ItemPickerDialog Title="@(adding ? L.T("Ins Lager legen", "Put into storage") : L.T($"Lagerfeld {editing + 1}", $"Storage slot {editing + 1}"))"
+                      Current="@(adding ? null : slots[editing])" CanClear="@(!adding && !slots[editing].IsNone)"
+                      Picked="Put" Cleared="Clear" Closed="() => editing = Closed" />
+}
+
+@code {
+    private const int PageSize = 100;
+    private const int Closed = -1;
+    private const int Adding = -2;
+
+    [Parameter, EditorRequired] public Player Player { get; set; } = null!;
+
+    private List<Item> slots = [];
+    private int unlocked;
+    private int page;
+    private bool onlyUsed;
+    private int editing = Closed;
+    private string? message;
+    private Player? loadedFor;
+
+    private int MaxSpaces => slots.Count; // the largest storage of the save's game version: 5000, or 9000 since 3.0
+
+    private int used => slots.Take(unlocked).Count(s => !s.IsNone);
+
+    private List<int> Visible => Enumerable.Range(0, unlocked).Where(i => !onlyUsed || !slots[i].IsNone).ToList();
+
+    private int Pages => Math.Max(1, (Visible.Count + PageSize - 1) / PageSize);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!ReferenceEquals(loadedFor, Player))
+        {
+            loadedFor = Player;
+            var p = Player.Personal;
+            slots = p.ItemChest.Select(Copy).ToList();
+            unlocked = (int)Math.Min(slots.Count, p.ItemChestCount);
+            page = 0;
+            editing = Closed;
+            message = null;
+        }
+        await Catalog.EnsureLoadedAsync();
+    }
+
+    private static Item Copy(Item item) => new()
+    {
+        ItemId = item.ItemId, SystemParam = item.SystemParam, AdditionalParam = item.AdditionalParam, FreeParam = item.FreeParam,
+    };
+
+    private void ShowOnlyUsed(bool value)
+    {
+        onlyUsed = value;
+        page = 0;
+    }
+
+    private void Store()
+    {
+        Player.Personal.ItemChest = slots.ToArray();
+        Session.MarkDirty();
+    }
+
+    private void Put(Item item)
+    {
+        var adding = editing == Adding;
+        var index = adding ? slots.FindIndex(0, unlocked, s => s.IsNone) : editing;
+        editing = Closed;
+        if (index < 0)
+        {
+            message = L.T("Das Lager ist voll.", "The storage is full.");
+            return;
+        }
+        slots[index] = item;
+        Store();
+        if (adding)
+        {
+            // jump to the page that shows the new item
+            page = Math.Max(0, Visible.IndexOf(index)) / PageSize;
+            message = L.T($"{GameInfo.Strings.GetItemName(item)} liegt jetzt in Feld {index + 1}.",
+                $"{GameInfo.Strings.GetItemName(item)} is now in slot {index + 1}.");
+        }
+    }
+
+    private void Clear()
+    {
+        slots[editing] = new Item { ItemId = Item.NONE };
+        editing = Closed;
+        Store();
+    }
+
+    private void Expand()
+    {
+        unlocked = MaxSpaces;
+        Player.Personal.ItemChestCount = (uint)MaxSpaces;
+        message = L.T($"Das Lager hat jetzt {MaxSpaces} Plätze.", $"The storage now has {MaxSpaces} spaces.");
+        Session.MarkDirty();
+    }
+}

@@ -12,24 +12,7 @@
         @for (int i = 0; i < slots.Count; i++)
         {
             var index = i;
-            var item = slots[i];
-            var locked = index >= unlocked;
-            <button class="pslot @(item.IsNone ? "empty" : "") @(locked ? "locked" : "")" disabled="@locked"
-                    title="@(item.IsNone ? L.T($"Feld {index + 1}, leer", $"Slot {index + 1}, empty") : GameInfo.Strings.GetItemName(item))"
-                    @onclick="() => editing = index">
-                @if (item.IsNone)
-                {
-                    <span class="plus">+</span>
-                }
-                else
-                {
-                    <ItemImage Src="@Catalog.PictureOf(item)" Alt="@GameInfo.Strings.GetItemName(item)" />
-                    @if (StackOf(item) > 1 && item.Count > 0)
-                    {
-                        <span class="badge">@(item.Count + 1)</span>
-                    }
-                }
-            </button>
+            <ItemSlot Item="@slots[index]" Number="@(index + 1)" Locked="@(index >= unlocked)" OnClick="() => editing = index" />
         }
     </div>
     @if (unlocked < slots.Count)
@@ -74,8 +57,6 @@
     {
         ItemId = item.ItemId, SystemParam = item.SystemParam, AdditionalParam = item.AdditionalParam, FreeParam = item.FreeParam,
     };
-
-    private static int StackOf(Item item) => ItemInfo.TryGetMaxStackCount(item, out var max) ? max : 1;
 
     private void Store()
     {
