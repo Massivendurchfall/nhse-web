@@ -2,7 +2,7 @@
 
 ## NHSE
 
-`external/NHSE` and the code compiled from it, as well as the menu icons in `src/NHSE.Web/wwwroot/menuicon`, come from [NHSE](https://github.com/kwsch/NHSE) by kwsch and contributors, licensed under the GNU General Public License v3.0 (see [LICENSE](LICENSE)).
+`external/NHSE` and the code compiled from it, the menu icons in `src/NHSE.Web/wwwroot/menuicon`, and the villager templates and pictures the build publishes as `villagers/` and `villagericon/` come from [NHSE](https://github.com/kwsch/NHSE) by kwsch and contributors, licensed under the GNU General Public License v3.0 (see [LICENSE](LICENSE)).
 
 ## Norviah/animal-crossing
 

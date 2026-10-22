@@ -15,6 +15,7 @@
     <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <NhseCore>$(MSBuildThisFileDirectory)..\..\external\NHSE\NHSE.Core\</NhseCore>
+    <NhseVillagers>$(MSBuildThisFileDirectory)..\..\external\NHSE\NHSE.Villagers\</NhseVillagers>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,6 +24,17 @@
              LinkBase="NHSE.Core" />
     <Compile Include="Crypto\AesCtr.cs" />
     <Compile Include="MemorySaveFileProvider.cs" />
+  </ItemGroup>
+
+  <!--
+    The villager swap of NHSE.Villagers, unmodified. Its resource lookup is replaced by
+    Villagers/VillagerResources.cs: the 37 MB of villager templates are served as files
+    and fetched one villager at a time instead of being embedded.
+  -->
+  <ItemGroup>
+    <Compile Include="$(NhseVillagers)VillagerSwap.cs;$(NhseVillagers)VillagerData.cs;$(NhseVillagers)VillagerInfo.cs"
+             LinkBase="NHSE.Villagers" />
+    <Compile Include="Villagers\VillagerResources.cs" />
   </ItemGroup>
 
   <ItemGroup>

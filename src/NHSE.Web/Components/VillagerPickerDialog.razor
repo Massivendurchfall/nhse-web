@@ -1,0 +1,127 @@
+@inject VillagerCatalog Villagers
+
+<div class="dialog-backdrop" @onclick="Close">
+    <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+        <header class="dialog-head">
+            <h3>@Title</h3>
+            <button class="icon-button" aria-label="@L.T("Schließen", "Close")" @onclick="Close">&#x2715;</button>
+        </header>
+
+        <nav class="categories">
+            <button class="category @(species is null && filter.Length == 0 ? "active" : "")" @onclick="() => SelectSpecies(null)">
+                <img src="menuicon/Leaf.png" alt="" />
+                <span>@L.T("Alle", "All")</span>
+            </button>
+            @foreach (var s in VillagerCatalog.Species)
+            {
+                var sp = s;
+                <button class="category @(sp == species && filter.Length == 0 ? "active" : "")" @onclick="() => SelectSpecies(sp)">
+                    <ItemImage Src="@VillagerCatalog.Picture(FirstOf(sp))" />
+                    <span>@VillagerCatalog.SpeciesName(sp)</span>
+                </button>
+            }
+        </nav>
+
+        <div class="filter">
+            <input placeholder="@L.T("Filtern (optional)", "Filter (optional)")" value="@filter" @oninput="e => SetFilter((string?)e.Value)" />
+            @if (filter.Length > 0)
+            {
+                <button class="icon-button" aria-label="@L.T("Filter löschen", "Clear filter")" @onclick="() => SetFilter(null)">&#x2715;</button>
+            }
+        </div>
+
+        <div class="tiles villager-tiles">
+            @foreach (var entry in Visible.Take(shown))
+            {
+                var e = entry;
+                var living = Taken.Contains(e.Id);
+                <button class="tile @(selected?.Id == e.Id ? "selected" : "")" title="@e.Name" disabled="@living" @onclick="() => selected = e">
+                    <ItemImage Src="@VillagerCatalog.Picture(e.Id)" Alt="@e.Name" />
+                    <span>@e.Name</span>
+                    @if (living)
+                    {
+                        <small>@L.T("wohnt schon hier", "lives here")</small>
+                    }
+                </button>
+            }
+        </div>
+        @if (Visible.Count() > shown)
+        {
+            <div class="more"><button @onclick="() => shown += PageSize">@L.T("Mehr anzeigen", "Show more")</button></div>
+        }
+        else if (!Visible.Any())
+        {
+            <p class="hint center">@L.T("Niemand gefunden.", "Nobody found.")</p>
+        }
+
+        <footer class="dialog-foot">
+            @if (selected is not null)
+            {
+                <div class="choice">
+                    <ItemImage Src="@VillagerCatalog.Picture(selected.Id)" Alt="@selected.Name" Class="big" />
+                    <div class="choice-text">
+                        <strong>@selected.Name</strong>
+                        <span class="hint">@VillagerCatalog.SpeciesName(selected.Species)</span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <span class="hint">@L.T("Tippe auf einen Bewohner, um ihn auszuwählen.", "Tap a villager to choose them.")</span>
+            }
+            <div class="foot-buttons">
+                <button class="primary" disabled="@(selected is null || Busy)" @onclick="Confirm">
+                    @if (Busy)
+                    {
+                        <span class="spinner"></span>
+                    }
+                    @L.T("Einziehen lassen", "Move in")
+                </button>
+            </div>
+        </footer>
+    </div>
+</div>
+
+@code {
+    private const int PageSize = 120;
+
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public IReadOnlySet<string> Taken { get; set; } = new HashSet<string>();
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<string> Picked { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private VillagerSpecies? species;
+    private string filter = string.Empty;
+    private int shown = PageSize;
+    private VillagerCatalog.Entry? selected;
+    private Dictionary<VillagerSpecies, string>? firstOf;
+
+    private IEnumerable<VillagerCatalog.Entry> Visible => filter.Length > 0
+        ? Villagers.All.Where(v => v.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
+        : species is { } s ? Villagers.All.Where(v => v.Species == s) : Villagers.All;
+
+    // the first villager of a species stands for it in the category bar
+    private string FirstOf(VillagerSpecies s)
+    {
+        firstOf ??= Villagers.All.GroupBy(v => v.Species).ToDictionary(g => g.Key, g => g.Min(v => v.Id)!);
+        return firstOf.GetValueOrDefault(s, string.Empty);
+    }
+
+    private void SelectSpecies(VillagerSpecies? value)
+    {
+        species = value;
+        filter = string.Empty;
+        shown = PageSize;
+    }
+
+    private void SetFilter(string? value)
+    {
+        filter = value?.Trim() ?? string.Empty;
+        shown = PageSize;
+    }
+
+    private Task Confirm() => selected is null ? Task.CompletedTask : Picked.InvokeAsync(selected.Id);
+
+    private Task Close() => Busy ? Task.CompletedTask : Closed.InvokeAsync();
+}

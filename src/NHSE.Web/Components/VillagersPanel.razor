@@ -1,0 +1,169 @@
+@using NHSE.Villagers
+@inject SaveSession Session
+@inject VillagerCatalog Catalog
+
+<section class="card">
+    <header class="card-head">
+        <h3>@L.T("Bewohner", "Residents")</h3>
+        <span class="pill">@L.T($"{villagers.Count(v => !VillagerCatalog.IsEmpty(v))} von {villagers.Length} Plätzen bewohnt",
+                                $"{villagers.Count(v => !VillagerCatalog.IsEmpty(v))} of {villagers.Length} places taken")</span>
+    </header>
+    <p class="hint">@L.T("Tippe auf einen Bewohner, um ihn gegen einen anderen zu tauschen. Der neue Bewohner zieht mit seinem eigenen Haus, seinen Möbeln und seiner Kleidung ein.",
+                         "Tap a resident to swap them for someone else. The new villager moves in with their own house, furniture and clothes.")</p>
+
+    <div class="villager-grid">
+        @for (int i = 0; i < villagers.Length; i++)
+        {
+            var index = i;
+            var v = villagers[index];
+            if (VillagerCatalog.IsEmpty(v))
+                continue;
+            <div class="villager @(v.MovingOut ? "leaving" : "")">
+                <button class="villager-pic" title="@L.T("Tauschen", "Swap")" @onclick="() => picking = index">
+                    <ItemImage Src="@VillagerCatalog.Picture(v.InternalName)" Alt="@VillagerCatalog.Name(v)" />
+                </button>
+                <strong>@VillagerCatalog.Name(v)</strong>
+                <span class="hint">@VillagerCatalog.SpeciesName((VillagerSpecies)v.Species)</span>
+                <label class="phrase">
+                    <span>@L.T("Spruch", "Catchphrase")</span>
+                    <input maxlength="12" value="@v.CatchPhrase" placeholder="@GameInfo.Strings.GetVillagerDefaultPhrase(v.InternalName)"
+                           @onchange="e => SetPhrase(index, (string?)e.Value)" />
+                </label>
+                <label class="check">
+                    <input type="checkbox" checked="@v.MovingOut" @onchange="e => SetMovingOut(index, e.Value is true)" />
+                    <span>@L.T("Zieht aus", "Moving out")</span>
+                </label>
+                <button class="small" @onclick="() => picking = index">@L.T("Tauschen", "Swap")</button>
+            </div>
+        }
+        @if (FreePlaces > 0)
+        {
+            <div class="villager empty">
+                <span class="plus">+</span>
+                <span>@L.T(FreePlaces == 1 ? "1 freier Platz" : $"{FreePlaces} freie Plätze", FreePlaces == 1 ? "1 free place" : $"{FreePlaces} free places")</span>
+                <span class="hint">@L.T("Neue Bewohner ziehen im Spiel ein. Hier tauschst du die, die schon da sind.",
+                                       "New villagers move in through the game. Here you swap the ones already living here.")</span>
+            </div>
+        }
+    </div>
+
+    <div class="buttons">
+        <button class="primary" @onclick="MaxFriendship" disabled="@friendsDone">
+            <img src="menuicon/Love.png" alt="" />
+            @(friendsDone ? L.T("Alle sind beste Freunde", "Everyone is a best friend") : L.T("Freundschaft mit allen auf Maximum", "Max friendship with everyone"))
+        </button>
+    </div>
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+</section>
+
+@if (picking >= 0)
+{
+    <VillagerPickerDialog Title="@L.T($"Wer zieht statt {VillagerCatalog.Name(villagers[picking])} ein?", $"Who moves in instead of {VillagerCatalog.Name(villagers[picking])}?")"
+                          Taken="@Taken" Busy="@busy" Picked="Swap" Closed="() => picking = -1" />
+}
+
+@code {
+    private IVillager[] villagers = [];
+    private int picking = -1;
+    private bool busy;
+    private bool friendsDone;
+    private string? error;
+
+    private MainSave Main => Session.Save!.Main;
+
+    private int FreePlaces => villagers.Count(VillagerCatalog.IsEmpty);
+
+    private IReadOnlySet<string> Taken => villagers.Where(v => !VillagerCatalog.IsEmpty(v)).Select(v => v.InternalName).ToHashSet();
+
+    protected override void OnInitialized() => Load();
+
+    private void Load() => villagers = Main.GetVillagers();
+
+    private void Store(int index)
+    {
+        Main.SetVillager(villagers[index], index);
+        Session.MarkDirty();
+    }
+
+    private void SetPhrase(int index, string? value)
+    {
+        value = (value ?? string.Empty).Trim();
+        if (value.Length == 0 || value == villagers[index].CatchPhrase)
+            return;
+        villagers[index].CatchPhrase = value;
+        Store(index);
+    }
+
+    private void SetMovingOut(int index, bool value)
+    {
+        villagers[index].MovingOut = value;
+        Store(index);
+    }
+
+    private void MaxFriendship()
+    {
+        for (int i = 0; i < villagers.Length; i++)
+        {
+            if (VillagerCatalog.IsEmpty(villagers[i]))
+                continue;
+            villagers[i].SetFriendshipAll();
+            Main.SetVillager(villagers[i], i);
+        }
+        friendsDone = true;
+        Session.MarkDirty();
+    }
+
+    // Same steps as NHSE's villager editor: swap villager and house together, keep the house slot.
+    private async Task Swap(string id)
+    {
+        error = null;
+        var index = picking;
+        if (villagers[index] is not Villager2 current)
+        {
+            error = L.T("Dieser Spielstand ist zu alt für den Tausch. Aktualisiere das Spiel auf 2.0 oder neuer.",
+                "This save is too old for a swap. Update the game to 2.0 or newer.");
+            picking = -1;
+            return;
+        }
+        var houses = Main.GetVillagerHouses();
+        var houseIndex = Array.FindIndex(houses, h => h.NPC1 == index);
+        if (houseIndex < 0)
+        {
+            error = L.T("Dieser Bewohner hat noch kein eigenes Haus. Warte, bis er eingezogen ist.",
+                "This villager has no house yet. Wait until they have moved in.");
+            picking = -1;
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            await Catalog.LoadTemplateAsync(id);
+            var replace = VillagerSwap.GetReplacementVillager(new VillagerInfo(current, houses[houseIndex]), id);
+            Main.SetVillagerHouse(new VillagerHouse1(replace.House), houseIndex);
+            Main.SetVillager(new Villager2(replace.Villager), index);
+            Load();
+            friendsDone = false;
+            Session.MarkDirty();
+            picking = -1;
+        }
+        catch (HttpRequestException)
+        {
+            error = L.T("Die Daten des Bewohners ließen sich nicht laden. Prüfe die Internetverbindung.",
+                "The villager data could not be loaded. Check the internet connection.");
+            picking = -1;
+        }
+        catch (ArgumentException e)
+        {
+            error = L.T("Die Daten des Bewohners passen nicht: ", "The villager data does not fit: ") + e.Message;
+            picking = -1;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

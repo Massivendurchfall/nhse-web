@@ -4,3 +4,6 @@ obj/
 src/NHSE.Web/wwwroot/testsave/
 *.dat
 publish/
+# copies of the NHSE submodule files for the development server, see NHSE.Web.csproj
+src/NHSE.Web/wwwroot/villagers/
+src/NHSE.Web/wwwroot/villagericon/

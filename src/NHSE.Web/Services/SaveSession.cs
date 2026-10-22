@@ -91,9 +91,16 @@ public sealed class SaveSession(IJSRuntime js)
         var reloaded = new HorizonSave(new MemorySaveFileProvider(Provider.Files));
         var p = reloaded.Players[0].Personal;
         var book = p.GetRecipeBook();
+        var main = reloaded.Main;
+        var villagers = main.GetVillagers().Where(v => !VillagerCatalog.IsEmpty(v))
+            .Select(v => v.InternalName + (v.MovingOut ? " (out)" : ""));
+        var houses = main.GetVillagerHouses().Count(h => h.NPC1 >= 0);
+        var weeds = main.GetFieldItemLayer0().Count(t => FieldItemList.Items.TryGetValue(t.DisplayItemId, out var d) && d.Kind.IsWeed);
         return $"self test: save {saveMs} ms, reload {timer.ElapsedMilliseconds} ms, invalid hashes {reloaded.GetInvalidHashes().Count()}, " +
                $"wallet {p.Wallet.Value}, bank {p.Bank.Value}, slot 16 {GameInfo.Strings.GetItemName(p.Pocket[15])}, " +
-               $"recipes {RecipeList.Recipes.Keys.Count(k => book.GetIsKnown(k))}, reactions {p.Reactions.ManpuBit.Count(r => r != 0)}";
+               $"recipes {RecipeList.Recipes.Keys.Count(k => book.GetIsKnown(k))}, reactions {p.Reactions.ManpuBit.Count(r => r != 0)}, " +
+               $"villagers {string.Join(" ", villagers)}, houses {houses}, turnips buy {main.Turnips.BuyPrice} mon am {main.Turnips.SellMondayAM}, " +
+               $"museum {main.Museum.GetItems().Count(i => !i.IsNone)}, weeds {weeds}";
     }
 #endif
 

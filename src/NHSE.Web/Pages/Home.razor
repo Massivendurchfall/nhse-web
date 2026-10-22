@@ -101,6 +101,12 @@
             <button class="@(tab == Tab.Unlock ? "active" : "")" @onclick="() => tab = Tab.Unlock">
                 <img src="menuicon/BookRecipe.png" alt="" />@L.T("Freischalten", "Unlock")
             </button>
+            <button class="@(tab == Tab.Island ? "active" : "")" @onclick="() => tab = Tab.Island">
+                <img src="menuicon/PltPalm.png" alt="" />@L.T("Insel", "Island")
+            </button>
+            <button class="@(tab == Tab.Villagers ? "active" : "")" @onclick="() => tab = Tab.Villagers">
+                <img src="menuicon/Tent.png" alt="" />@L.T("Bewohner", "Residents")
+            </button>
         </nav>
 
         @switch (tab)
@@ -113,6 +119,12 @@
                 break;
             case Tab.Unlock:
                 <UnlockPanel Player="@current" />
+                break;
+            case Tab.Island:
+                <IslandPanel />
+                break;
+            case Tab.Villagers:
+                <VillagersPanel />
                 break;
         }
 
@@ -154,7 +166,7 @@
 </main>
 
 @code {
-    private enum Tab { Player, Pockets, Unlock }
+    private enum Tab { Player, Pockets, Unlock, Island, Villagers }
 
     private Tab tab = Tab.Player;
     private int player;

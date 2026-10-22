@@ -1,0 +1,210 @@
+@inject SaveSession Session
+
+<div class="unlock-grid">
+    <section class="card unlock">
+        <img src="menuicon/Fossil.png" alt="" />
+        <h3>@L.T("Museum", "Museum")</h3>
+        <div class="progress"><span style="width: @(Percent(donated, museumTotal))%"></span></div>
+        <p>@L.T($"{donated} von {museumTotal} gespendet", $"{donated} of {museumTotal} donated")</p>
+        <button class="primary" @onclick="DonateAll" disabled="@(donated >= museumTotal)">
+            @(donated >= museumTotal ? L.T("Alles gespendet", "Everything donated") : L.T("Alles spenden", "Donate everything"))
+        </button>
+        <p class="hint">@L.T("Alle Fische, Insekten, Meerestiere, Fossilien und echten Kunstwerke, gespendet von Spieler 1.",
+                             "All fish, bugs, sea creatures, fossils and genuine art, donated by player 1.")</p>
+    </section>
+
+    <section class="card unlock">
+        <img src="menuicon/Weed.png" alt="" />
+        <h3>@L.T("Insel aufräumen", "Tidy up the island")</h3>
+        <ul class="chores">
+            <li>
+                <img src="menuicon/Weed.png" alt="" />
+                <span>@L.T("Unkraut", "Weeds")</span>
+                <span class="pill">@weeds</span>
+                <button class="small" disabled="@(weeds == 0)" @onclick="() => Tidy(l => l.RemoveAllWeeds(0, 0, l.TileInfo.TotalWidth, l.TileInfo.TotalHeight))">@L.T("Entfernen", "Remove")</button>
+            </li>
+            <li>
+                <img src="menuicon/Scoop.png" alt="" />
+                <span>@L.T("Löcher", "Holes")</span>
+                <span class="pill">@holes</span>
+                <button class="small" disabled="@(holes == 0)" @onclick="() => Tidy(l => l.RemoveAllHoles(0, 0, l.TileInfo.TotalWidth, l.TileInfo.TotalHeight))">@L.T("Zuschütten", "Fill")</button>
+            </li>
+            <li>
+                <img src="menuicon/Branch.png" alt="" />
+                <span>@L.T("Äste", "Branches")</span>
+                <span class="pill">@branches</span>
+                <button class="small" disabled="@(branches == 0)" @onclick="() => Tidy(l => l.RemoveAllBranches(0, 0, l.TileInfo.TotalWidth, l.TileInfo.TotalHeight))">@L.T("Aufsammeln", "Pick up")</button>
+            </li>
+            <li>
+                <img src="menuicon/Watering.png" alt="" />
+                <span>@L.T("Ungegossene Blumen", "Unwatered flowers")</span>
+                <span class="pill">@dryFlowers</span>
+                <button class="small" disabled="@(dryFlowers == 0)" @onclick="() => Tidy(l => l.WaterAllFlowers(0, 0, l.TileInfo.TotalWidth, l.TileInfo.TotalHeight, false))">@L.T("Gießen", "Water")</button>
+            </li>
+        </ul>
+        <p class="hint">@L.T("Gilt für den Boden der ganzen Insel. Bäume, Steine und aufgestellte Möbel bleiben stehen.",
+                             "Applies to the ground of the whole island. Trees, rocks and placed furniture stay.")</p>
+    </section>
+</div>
+
+<section class="card">
+    <header class="card-head">
+        <h3 class="with-icon"><img src="menuicon/Kabu.png" alt="" />@L.T("Rübenpreise dieser Woche", "Turnip prices this week")</h3>
+        <button class="small" @onclick="() => SetAllSell(660)">@L.T("Alle Verkaufspreise auf 660", "All sell prices to 660")</button>
+    </header>
+    <div class="turnips">
+        <label class="turnip-buy">
+            <span>@L.T("Kaufpreis am Sonntag", "Buy price on Sunday")</span>
+            <input type="number" min="1" max="999" value="@turnips.BuyPrice" @onchange="e => SetBuy(e.Value)" />
+        </label>
+        <div class="turnip-week">
+            <span></span>
+            <span class="hint">@L.T("Vormittag", "Morning")</span>
+            <span class="hint">@L.T("Nachmittag", "Afternoon")</span>
+            @foreach (var day in Days)
+            {
+                var d = day;
+                <strong>@L.T(d.De, d.En)</strong>
+                <input type="number" min="1" max="999" value="@d.GetAm(turnips)" @onchange="e => SetSell(e.Value, d.SetAm)" />
+                <input type="number" min="1" max="999" value="@d.GetPm(turnips)" @onchange="e => SetSell(e.Value, d.SetPm)" />
+            }
+        </div>
+    </div>
+    <p class="hint">@L.T("Die Preise gelten bis zum nächsten Sonntag, dann würfelt das Spiel neue aus. Im Spiel sind höchstens 660 Sterni möglich.",
+                         "The prices last until next Sunday, then the game rolls new ones. The game itself never goes above 660 Bells.")</p>
+</section>
+
+@code {
+    private record Day(string De, string En,
+        Func<TurnipStonk, uint> GetAm, Action<TurnipStonk, uint> SetAm,
+        Func<TurnipStonk, uint> GetPm, Action<TurnipStonk, uint> SetPm);
+
+    private static readonly Day[] Days =
+    [
+        new("Montag", "Monday", t => t.SellMondayAM, (t, v) => t.SellMondayAM = v, t => t.SellMondayPM, (t, v) => t.SellMondayPM = v),
+        new("Dienstag", "Tuesday", t => t.SellTuesdayAM, (t, v) => t.SellTuesdayAM = v, t => t.SellTuesdayPM, (t, v) => t.SellTuesdayPM = v),
+        new("Mittwoch", "Wednesday", t => t.SellWednesdayAM, (t, v) => t.SellWednesdayAM = v, t => t.SellWednesdayPM, (t, v) => t.SellWednesdayPM = v),
+        new("Donnerstag", "Thursday", t => t.SellThursdayAM, (t, v) => t.SellThursdayAM = v, t => t.SellThursdayPM, (t, v) => t.SellThursdayPM = v),
+        new("Freitag", "Friday", t => t.SellFridayAM, (t, v) => t.SellFridayAM = v, t => t.SellFridayPM, (t, v) => t.SellFridayPM = v),
+        new("Samstag", "Saturday", t => t.SellSaturdayAM, (t, v) => t.SellSaturdayAM = v, t => t.SellSaturdayPM, (t, v) => t.SellSaturdayPM = v),
+    ];
+
+    private TurnipStonk turnips = new();
+    private int donated;
+    private int museumTotal;
+    private int weeds;
+    private int holes;
+    private int branches;
+    private int dryFlowers;
+
+    private MainSave Main => Session.Save!.Main;
+
+    protected override void OnInitialized()
+    {
+        turnips = Main.Turnips;
+        CountMuseum();
+        CountField();
+    }
+
+    private static int Percent(int value, int max) => max <= 0 ? 0 : Math.Min(100, value * 100 / max);
+
+    private static uint? Price(object? value) =>
+        uint.TryParse(value?.ToString(), out var v) ? Math.Clamp(v, 1, 999) : null;
+
+    private void SetBuy(object? value)
+    {
+        if (Price(value) is not { } v)
+            return;
+        turnips.BuyPrice = v;
+        StoreTurnips();
+    }
+
+    private void SetSell(object? value, Action<TurnipStonk, uint> set)
+    {
+        if (Price(value) is not { } v)
+            return;
+        set(turnips, v);
+        StoreTurnips();
+    }
+
+    private void SetAllSell(uint value)
+    {
+        foreach (var d in Days)
+        {
+            d.SetAm(turnips, value);
+            d.SetPm(turnips, value);
+        }
+        StoreTurnips();
+    }
+
+    private void StoreTurnips()
+    {
+        Main.Turnips = turnips;
+        turnips = Main.Turnips;
+        Session.MarkDirty();
+    }
+
+    // same list as NHSE's "give all": genuine art, fish, bugs, sea creatures and fossils
+    private static HashSet<ushort> MuseumItems()
+    {
+        var english = GameInfo.GetStrings("en").itemlist;
+        var set = new HashSet<ushort>();
+        foreach (var id in GameLists.Art)
+        {
+            if (!english[id].Contains('('))
+                set.Add(id);
+        }
+        foreach (var list in new[] { GameLists.Fish.ToArray(), GameLists.Fossils.ToArray(), GameLists.Bugs.ToArray(), GameLists.Dive.ToArray() })
+            set.UnionWith(list);
+        return set;
+    }
+
+    private void CountMuseum()
+    {
+        var all = MuseumItems();
+        museumTotal = all.Count;
+        donated = Main.Museum.GetItems().Select(i => i.ItemId).Where(all.Contains).Distinct().Count();
+    }
+
+    private void DonateAll()
+    {
+        var museum = Main.Museum;
+        var editor = new MuseumEditor(museum);
+        editor.GiveAll(GameInfo.GetStrings("en").itemlist, 1000);
+        editor.Save();
+        Main.Museum = museum;
+        Session.MarkDirty();
+        CountMuseum();
+    }
+
+    private LayerFieldItem Ground() => new(Main.GetFieldItemLayer0(), Main.FieldItemAcreWidth, Main.FieldItemAcreHeight);
+
+    private void CountField()
+    {
+        var kinds = FieldItemList.Items;
+        weeds = holes = branches = dryFlowers = 0;
+        foreach (var tile in Ground().Tiles)
+        {
+            if (tile.DisplayItemId == 2500)
+                branches++;
+            if (!kinds.TryGetValue(tile.DisplayItemId, out var def))
+                continue;
+            if (def.Kind.IsWeed)
+                weeds++;
+            else if (def.Kind == FieldItemKind.UnitIconHole)
+                holes++;
+            else if (def.Kind.IsFlower && tile.IsRoot && !tile.IsWatered)
+                dryFlowers++;
+        }
+    }
+
+    private void Tidy(Func<LayerFieldItem, int> action)
+    {
+        var ground = Ground();
+        if (action(ground) == 0)
+            return;
+        Main.SetFieldItemLayer0(ground.Tiles);
+        Session.MarkDirty();
+        CountField();
+    }
+}

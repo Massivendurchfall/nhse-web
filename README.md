@@ -9,6 +9,8 @@ A save editor for Animal Crossing: New Horizons that runs entirely in your brows
 - **Player:** name, island name, wallet, bank and Nook Miles, with the passport photo
 - **Pockets:** pick items from a picture grid with categories, furniture variants and stack size
 - **Unlock:** all DIY recipes and all reactions
+- **Island:** donate everything to the museum, remove weeds, fill holes, pick up branches, water all flowers, set this week's turnip prices
+- **Residents:** swap a villager for any other from a picture grid (house, furniture and clothes included), edit catchphrases, mark villagers as moving out, max friendship
 - **Open a save folder** in Chrome or Edge and save straight back into it, or **open a ZIP** in any browser and get a new ZIP
 - A backup ZIP of the original files is downloaded before the first write
 - German and English, following the browser language
@@ -35,13 +37,14 @@ dotnet run --project src/NHSE.Web
 ## How it works
 
 - `external/NHSE` is the upstream NHSE repository as a submodule. `src/NHSE.Core.Web` compiles its NHSE.Core sources for WebAssembly without changes, except for the AES-CTR code: `System.Security.Cryptography.Aes` is not available in the browser, so `src/NHSE.Core.Web/Crypto/AesCtr.cs` is a managed AES-128 with the same API.
+- The villager swap is NHSE.Villagers' `VillagerSwap`, also unchanged. Its 37 MB of villager templates are not embedded: the build serves them from `villagers/` and the app fetches the two files of a villager when it moves in (`src/NHSE.Core.Web/Villagers/VillagerResources.cs`).
 - `src/NHSE.Web` is the Blazor WebAssembly app. Folder access uses the File System Access API, with a folder upload and ZIP fallback for other browsers.
 - `tools/build_catalog.py` builds `wwwroot/data/catalog.json` from the Norviah/animal-crossing data. It maps item IDs to pictures and categories; item names come from NHSE in the player's language.
 - `tools/SaveCheck` checks the managed AES against .NET's AES, loads a save folder, verifies every hash and runs a save round trip. Use it on a copy of a save only.
 
 ## Credits and license
 
-- [NHSE](https://github.com/kwsch/NHSE) by kwsch and contributors, GPL-3.0. The menu icons come from NHSE.Sprites.
+- [NHSE](https://github.com/kwsch/NHSE) by kwsch and contributors, GPL-3.0. The menu icons and villager pictures come from NHSE.Sprites, the villager templates from NHSE.Villagers.
 - Item data from [Norviah/animal-crossing](https://github.com/Norviah/animal-crossing), MIT, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 - Item pictures are loaded from [acnhcdn.com](https://acnhcdn.com) and are not part of this repository.
 - Animal Crossing is a trademark of Nintendo. This project is not affiliated with or endorsed by Nintendo.

@@ -310,6 +310,42 @@ input:focus { outline: none; border-color: var(--sea); }
 .progress { width: 100%; height: 12px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
 .progress span { display: block; height: 100%; background: linear-gradient(90deg, var(--leaf), var(--sea)); border-radius: 999px; }
 
+/* island */
+.chores { list-style: none; padding: 0; margin: 0; width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.chores li { display: flex; align-items: center; gap: 10px; background: var(--card-2); border-radius: 16px; padding: 6px 8px 6px 10px; }
+.chores li img { width: 34px; height: 34px; }
+.chores li span:first-of-type { flex: 1; font-weight: 700; }
+.with-icon { display: inline-flex; align-items: center; gap: 10px; }
+.with-icon img { width: 40px; height: 40px; }
+.turnips { display: flex; flex-wrap: wrap; gap: 18px 28px; align-items: flex-start; margin-top: 8px; }
+.turnip-buy { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
+.turnip-buy input { width: 120px; }
+.turnip-week { display: grid; grid-template-columns: auto 110px 110px; gap: 8px 10px; align-items: center; }
+.turnip-week .hint { margin: 0; text-align: center; }
+.turnip-week input { width: 100%; }
+
+/* residents */
+.villager-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin: 12px 0 4px; }
+.villager {
+    display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
+    background: var(--card-2); border: 2px solid var(--line); border-radius: 18px; padding: 12px 10px;
+}
+.villager .hint { margin: 0; }
+.villager.empty { justify-content: center; border-style: dashed; color: var(--muted); font-weight: 700; min-height: 180px; }
+.villager.empty .hint { font-weight: 600; font-size: 0.8rem; }
+.chores .pill { background: var(--card); }
+.villager.empty .plus { font-size: 1.6rem; }
+.villager.leaving { border-color: var(--sun); }
+.villager-pic { width: 92px; height: 92px; padding: 6px; border-radius: 50%; background: var(--card); }
+.villager-pic img { width: 100%; height: 100%; object-fit: contain; }
+.villager-pic:hover:not(:disabled) { background: var(--leaf-soft); }
+.phrase { display: flex; flex-direction: column; gap: 4px; width: 100%; font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+.phrase input { width: 100%; padding: 6px 10px; font-size: 0.95rem; text-align: center; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; font-weight: 700; cursor: pointer; }
+.check input { width: 18px; height: 18px; accent-color: var(--warn); }
+.buttons button img { width: 26px; height: 26px; }
+.villager-tiles .tile small { color: var(--muted); font-size: 0.7rem; }
+
 /* save bar */
 .savebar {
     position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
@@ -352,4 +388,6 @@ footer { margin-top: 34px; color: var(--muted); font-size: 0.85rem; line-height:
     .savebar button.primary { margin-left: auto; }
     .tiles { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
     .tile img { width: 52px; height: 52px; }
+    .villager-grid { grid-template-columns: repeat(2, 1fr); }
+    .turnip-week { grid-template-columns: auto 1fr 1fr; width: 100%; }
 }

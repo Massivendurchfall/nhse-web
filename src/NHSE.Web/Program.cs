@@ -12,6 +12,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 builder.Services.AddScoped<SaveSession>();
 builder.Services.AddScoped<ItemCatalog>();
+builder.Services.AddScoped<VillagerCatalog>();
 
 // UI and item names follow the browser language: German or English.
 L.Use(CultureInfo.CurrentUICulture.Name);

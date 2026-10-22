@@ -21,6 +21,27 @@
     <TrimmerRootAssembly Include="NHSE.Core" />
   </ItemGroup>
 
+  <!--
+    From the NHSE submodule: villager templates for the villager swap (fetched on demand from
+    villagers/) and the villager pictures of NHSE.Sprites (villagericon/), new villagers included.
+  -->
+  <PropertyGroup>
+    <NhseRoot>$(MSBuildThisFileDirectory)..\..\external\NHSE\</NhseRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <NhseVillagerTemplate Include="$(NhseRoot)NHSE.Villagers\Resources\Villagers\*.bin;$(NhseRoot)NHSE.Villagers\Resources\Houses\*.bin" />
+    <NhseVillagerPicture Include="$(NhseRoot)NHSE.Sprites\Resources\Villagers\*.png" />
+    <Content Remove="wwwroot\villagers\**;wwwroot\villagericon\**" />
+    <Content Include="@(NhseVillagerTemplate)" Link="wwwroot\villagers\%(Filename)%(Extension)" />
+    <Content Include="@(NhseVillagerPicture)" Link="wwwroot\villagericon\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- the development server looks for linked assets inside wwwroot, so it gets a copy there (ignored by git) -->
+  <Target Name="CopyNhseAssetsForDevServer" BeforeTargets="Build">
+    <Copy SourceFiles="@(NhseVillagerTemplate)" DestinationFolder="wwwroot\villagers" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(NhseVillagerPicture)" DestinationFolder="wwwroot\villagericon" SkipUnchangedFiles="true" />
+  </Target>
+
   <!-- wwwroot/testsave holds a local save copy for debugging and must never be published -->
   <ItemGroup>
     <Content Update="wwwroot\testsave\**" CopyToPublishDirectory="Never" />
