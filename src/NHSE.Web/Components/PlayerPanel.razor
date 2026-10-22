@@ -1,0 +1,92 @@
+@inject SaveSession Session
+
+<section class="card profile">
+    @if (photo is not null)
+    {
+        <img class="passport" src="@photo" alt="@L.T("Passfoto", "Passport photo")" />
+    }
+    <div class="profile-fields">
+        <label>
+            <span>@L.T("Name", "Name")</span>
+            <input maxlength="10" value="@name" @onchange="e => Rename((string?)e.Value)" />
+        </label>
+        <label>
+            <span>@L.T("Insel", "Island")</span>
+            <input maxlength="10" value="@town" @onchange="e => RenameTown((string?)e.Value)" />
+        </label>
+        <p class="hint">@L.T("Höchstens 10 Zeichen. Der Name wird überall im Spielstand mitgeändert, auch bei den Bewohnern.",
+                             "Up to 10 characters. The name is changed everywhere in the save, villagers included.")</p>
+    </div>
+</section>
+
+<section class="card">
+    <header class="card-head"><h3>@L.T("Geld und Meilen", "Money and miles")</h3></header>
+    <div class="stats">
+        <MoneyField Label="@L.T("Sterni in der Tasche", "Bells in pocket")" Icon="menuicon/MoneyBag039.png"
+                    Value="@Personal.Wallet.Value" Max="99999" Steps="@(new uint[] { 10000 })"
+                    ValueChanged="v => Set(v, (p, x) => p.Wallet = p.Wallet with { Value = x })" />
+        <MoneyField Label="@L.T("Sterni auf der Bank", "Bells in the bank")" Icon="menuicon/MoneyBag069.png"
+                    Value="@Personal.Bank.Value" Max="999999999" Steps="@(new uint[] { 100000, 1000000 })"
+                    ValueChanged="v => Set(v, (p, x) => p.Bank = p.Bank with { Value = x })" />
+        <MoneyField Label="@L.T("Meilen", "Nook Miles")" Icon="menuicon/PlaneTicket.png"
+                    Value="@Personal.NookMiles.Value" Max="9999999" Steps="@(new uint[] { 10000, 100000 })"
+                    ValueChanged="v => Set(v, (p, x) => p.NookMiles = p.NookMiles with { Value = x })" />
+        <MoneyField Label="@L.T("Meilen insgesamt", "Nook Miles in total")" Icon="menuicon/BellExchangeTicket.png"
+                    Value="@Personal.TotalNookMiles.Value" Max="99999999" Steps="@(new uint[] { 100000 })"
+                    ValueChanged="v => Set(v, (p, x) => p.TotalNookMiles = p.TotalNookMiles with { Value = x })" />
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Player Player { get; set; } = null!;
+
+    private Personal Personal => Player.Personal;
+    private string name = string.Empty;
+    private string town = string.Empty;
+    private string? photo;
+    private Player? loadedFor;
+
+    protected override void OnParametersSet()
+    {
+        name = Personal.PlayerName;
+        town = Personal.TownName;
+        if (!ReferenceEquals(loadedFor, Player))
+        {
+            loadedFor = Player;
+            var jpeg = Personal.GetPhotoData();
+            photo = jpeg.Length > 0 ? "data:image/jpeg;base64," + Convert.ToBase64String(jpeg) : null;
+        }
+    }
+
+    private void Set(uint value, Action<Personal, uint> apply)
+    {
+        apply(Personal, value);
+        Session.MarkDirty();
+    }
+
+    // Like NHSE: the name is part of an identity block that also appears in the island and
+    // the villagers' memories, so every copy of the block is replaced.
+    private void Rename(string? value)
+    {
+        value = (value ?? string.Empty).Trim();
+        if (value.Length == 0 || value == Personal.PlayerName || Session.Save is null)
+            return;
+        var original = Personal.GetPlayerIdentity().ToArray();
+        Personal.PlayerName = value;
+        Session.Save.ChangeIdentity(original, Personal.GetPlayerIdentity());
+        name = value;
+        Session.MarkDirty();
+    }
+
+    private void RenameTown(string? value)
+    {
+        value = (value ?? string.Empty).Trim();
+        if (value.Length == 0 || value == Personal.TownName || Session.Save is null)
+            return;
+        var original = Personal.GetTownIdentity().ToArray();
+        Personal.TownName = value;
+        Session.Save.ChangeIdentity(original, Personal.GetTownIdentity());
+        town = value;
+        Session.MarkDirty();
+    }
+}

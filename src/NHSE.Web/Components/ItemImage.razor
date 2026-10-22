@@ -1,0 +1,9 @@
+@* Item picture with a leaf as fallback when the picture cannot be loaded. *@
+<img class="item-img @Class" src="@Src" alt="@Alt" loading="lazy" decoding="async" draggable="false"
+     onerror="this.onerror=null;this.src='@ItemCatalog.Fallback'" />
+
+@code {
+    [Parameter, EditorRequired] public string Src { get; set; } = string.Empty;
+    [Parameter] public string Alt { get; set; } = string.Empty;
+    [Parameter] public string? Class { get; set; }
+}

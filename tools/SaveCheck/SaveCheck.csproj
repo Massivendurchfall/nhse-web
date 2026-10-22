@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Desktop check for the browser build of NHSE.Core: managed AES against .NET's AES,
+       then load, edit and re-save a copy of a save folder entirely in memory. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NHSE.Core.Web\NHSE.Core.Web.csproj" />
+  </ItemGroup>
+
+</Project>

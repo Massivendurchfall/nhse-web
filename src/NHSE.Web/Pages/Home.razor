@@ -1,0 +1,268 @@
+﻿@page "/"
+@implements IDisposable
+@inject SaveSession Session
+@inject ItemCatalog Catalog
+
+<PageTitle>NHSE Web</PageTitle>
+
+<header class="top">
+    <div class="brand">
+        <img src="menuicon/Leaf.png" alt="" />
+        <div>
+            <h1>NHSE Web</h1>
+            <p>@L.T("Spielstandeditor für Animal Crossing: New Horizons, direkt im Browser.",
+                    "Save editor for Animal Crossing: New Horizons, right in your browser.")</p>
+        </div>
+    </div>
+</header>
+
+<main class="page">
+    @if (Session.Save is null)
+    {
+        <ol class="steps">
+            <li class="active"><span>1</span>@L.T("Spielstand öffnen", "Open your save")</li>
+            <li><span>2</span>@L.T("Bearbeiten", "Edit")</li>
+            <li><span>3</span>@L.T("Speichern", "Save")</li>
+        </ol>
+
+        <section class="card open">
+            <img class="open-art" src="menuicon/Present.png" alt="" />
+            <h2>@L.T("Wähle deinen Spielstand", "Choose your save")</h2>
+            <p>@L.T("Das ist der Ordner 01006F8002326000. Alles bleibt auf deinem Gerät, nichts wird hochgeladen.",
+                     "That is the 01006F8002326000 folder. Everything stays on your device, nothing is uploaded.")</p>
+            <div class="buttons center">
+                @if (folderAccess)
+                {
+                    <button class="primary big" @onclick="PickFolder" disabled="@busy">@L.T("Ordner öffnen", "Open folder")</button>
+                }
+                else
+                {
+                    <button class="primary big" @onclick="PickFolderUpload" disabled="@busy">@L.T("Ordner auswählen", "Choose folder")</button>
+                }
+                <label class="button @(busy ? "disabled" : "")">
+                    @L.T("ZIP öffnen", "Open ZIP")
+                    <InputFile OnChange="PickZip" accept=".zip" disabled="@busy" />
+                </label>
+            </div>
+            <input type="file" webkitdirectory multiple hidden @ref="folderInput" />
+            @if (busy)
+            {
+                <p class="status"><span class="spinner"></span>@L.T("Spielstand wird entschlüsselt ...", "Decrypting the save ...")</p>
+            }
+            else if (!folderAccess)
+            {
+                <p class="hint">@L.T("Dein Browser kann nicht direkt in Ordner schreiben. Zum Speichern bekommst du eine ZIP. In Chrome oder Edge geht es direkt.",
+                                      "Your browser cannot write into folders, so saving gives you a ZIP. Chrome and Edge save directly.")</p>
+            }
+        </section>
+
+        <details class="card help">
+            <summary>@L.T("Wo finde ich meinen Spielstand?", "Where do I find my save?")</summary>
+            <p><strong>Eden</strong> @L.T("(oder yuzu, Citron): Rechtsklick auf das Spiel und den Ordner der Speicherdaten öffnen. Oder direkt unter:", "(or yuzu, Citron): right click the game and open the save data location. Or go straight to:")</p>
+            <code>%APPDATA%\eden\nand\user\save\0000000000000000\&lt;@L.T("Nutzer", "user")&gt;\01006F8002326000</code>
+            <p><strong>Switch</strong> @L.T("mit JKSV oder Checkpoint sichern und den Ordner oder die ZIP öffnen.", "back up with JKSV or Checkpoint and open the folder or ZIP.")</p>
+            <p>@L.T("Beende das Spiel, bevor du speicherst.", "Close the game before you save.")</p>
+        </details>
+    }
+    else
+    {
+        var current = Session.Save.Players[player];
+        <section class="card island">
+            <div class="island-info">
+                <h2>@Session.TownName</h2>
+                @if (Session.InvalidHashes == 0 && Session.SizesValid)
+                {
+                    <span class="pill ok">&#x2714; @L.T("Spielstand geprüft", "Save checked")</span>
+                }
+                else
+                {
+                    <span class="pill warn">@L.T($"Achtung: {Session.InvalidHashes} Prüfsummen stimmen nicht", $"Careful: {Session.InvalidHashes} checksums do not match")</span>
+                }
+            </div>
+            <div class="residents">
+                @for (int i = 0; i < Session.Save.Players.Count; i++)
+                {
+                    var index = i;
+                    <button class="resident @(index == player ? "active" : "")" @onclick="() => player = index">
+                        @Session.Save.Players[index].Personal.PlayerName
+                    </button>
+                }
+            </div>
+            <button class="ghost small" @onclick="Session.Close">@L.T("Anderen Spielstand öffnen", "Open another save")</button>
+        </section>
+
+        <nav class="tabs">
+            <button class="@(tab == Tab.Player ? "active" : "")" @onclick="() => tab = Tab.Player">
+                <img src="menuicon/MoneyBag039.png" alt="" />@L.T("Spieler und Geld", "Player and money")
+            </button>
+            <button class="@(tab == Tab.Pockets ? "active" : "")" @onclick="() => tab = Tab.Pockets">
+                <img src="menuicon/Bag.png" alt="" />@L.T("Taschen", "Pockets")
+            </button>
+            <button class="@(tab == Tab.Unlock ? "active" : "")" @onclick="() => tab = Tab.Unlock">
+                <img src="menuicon/BookRecipe.png" alt="" />@L.T("Freischalten", "Unlock")
+            </button>
+        </nav>
+
+        @switch (tab)
+        {
+            case Tab.Player:
+                <PlayerPanel Player="@current" />
+                break;
+            case Tab.Pockets:
+                <PocketsPanel Player="@current" />
+                break;
+            case Tab.Unlock:
+                <UnlockPanel Player="@current" />
+                break;
+        }
+
+        <div class="savebar @(Session.Dirty ? "dirty" : "")">
+            <span class="save-state">
+                @if (busy)
+                {
+                    <span class="spinner"></span>
+                    @L.T("Wird verschlüsselt und gespeichert ...", "Encrypting and saving ...")
+                }
+                else
+                {
+                    @(message ?? (Session.Dirty ? L.T("Ungespeicherte Änderungen", "Unsaved changes") : L.T("Alles gespeichert", "Everything saved")))
+                }
+            </span>
+            @if (DebugBuild)
+            {
+                <button class="small" @onclick="RunSelfTest">Self test</button>
+            }
+            <button class="ghost" @onclick="Session.DownloadBackupAsync">@L.T("Backup", "Backup")</button>
+            <button class="primary" @onclick="SaveAsync" disabled="@(!Session.Dirty || busy)">
+                @(Session.CanWriteBack ? L.T("Speichern", "Save") : L.T("Als ZIP speichern", "Save as ZIP"))
+            </button>
+        </div>
+    }
+
+    @if (error is not null)
+    {
+        <p class="error">@error</p>
+    }
+
+    <footer>
+        @L.T("Auf Basis von", "Based on") <a href="https://github.com/kwsch/NHSE" target="_blank" rel="noopener">NHSE</a> @L.T("von kwsch (GPL-3.0).", "by kwsch (GPL-3.0).")
+        @L.T("Quellcode auf", "Source code on") <a href="https://github.com/Massivendurchfall/nhse-web" target="_blank" rel="noopener">GitHub</a>.
+        @L.T("Bilder von", "Pictures from") <a href="https://acnhcdn.com" target="_blank" rel="noopener">acnhcdn.com</a>,
+        @L.T("Itemdaten von", "item data from") <a href="https://github.com/Norviah/animal-crossing" target="_blank" rel="noopener">Norviah/animal-crossing</a>.
+        @L.T("Mach immer ein Backup, bevor du speicherst.", "Always keep a backup before saving.")
+    </footer>
+</main>
+
+@code {
+    private enum Tab { Player, Pockets, Unlock }
+
+    private Tab tab = Tab.Player;
+    private int player;
+    private bool busy;
+    private bool folderAccess;
+    private string? error;
+    private string? message;
+    private ElementReference folderInput;
+    private DotNetObjectReference<Home>? self;
+
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    protected override void OnInitialized() => Session.Changed += Refresh;
+
+#if DEBUG
+    private static readonly bool DebugBuild = true;
+
+    private void RunSelfTest() => message = Session.SelfTest();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Navigation.Uri.Contains("testsave", StringComparison.OrdinalIgnoreCase))
+            await Run(() => Session.LoadTestSaveAsync(new Uri(Navigation.BaseUri)));
+    }
+#else
+    private static readonly bool DebugBuild = false;
+
+    private void RunSelfTest() { }
+#endif
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+        var js = await Session.Js();
+        folderAccess = await js.InvokeAsync<bool>("supportsFolderAccess");
+        self = DotNetObjectReference.Create(this);
+        await js.InvokeVoidAsync("attachFolderInput", folderInput, self);
+        _ = Catalog.EnsureLoadedAsync(); // fetch the pictures list while the user picks a folder
+        StateHasChanged();
+    }
+
+    private void Refresh()
+    {
+        if (Session.Dirty)
+            message = null; // a new edit replaces the last save message
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task Run(Func<Task> work)
+    {
+        error = null;
+        message = null;
+        busy = true;
+        StateHasChanged();
+        await Task.Delay(30); // let the browser paint the busy state before the heavy work
+        try
+        {
+            await work();
+        }
+        catch (SaveLoadException e)
+        {
+            error = e.Message;
+        }
+        catch (JSException e)
+        {
+            error = L.T("Der Browser hat den Zugriff abgelehnt: ", "The browser refused the access: ") + e.Message;
+        }
+        finally
+        {
+            busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private Task PickFolder() => Run(async () =>
+    {
+        var paths = await (await Session.Js()).InvokeAsync<string[]?>("pickFolder");
+        if (paths is not null)
+        {
+            player = 0;
+            await Session.LoadPickedAsync(paths);
+        }
+    });
+
+    private async Task PickFolderUpload() => await (await Session.Js()).InvokeVoidAsync("openFolderInput", folderInput);
+
+    [JSInvokable]
+    public Task OnFolderInput(string[] paths) => Run(() =>
+    {
+        player = 0;
+        return Session.LoadPickedAsync(paths);
+    });
+
+    private Task PickZip(InputFileChangeEventArgs e) => Run(async () =>
+    {
+        await using var stream = e.File.OpenReadStream(64 * 1024 * 1024);
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer);
+        player = 0;
+        Session.LoadZip(buffer.ToArray());
+    });
+
+    private Task SaveAsync() => Run(async () => message = await Session.SaveAsync());
+
+    public void Dispose()
+    {
+        Session.Changed -= Refresh;
+        self?.Dispose();
+    }
+}

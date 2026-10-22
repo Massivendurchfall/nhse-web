@@ -1,0 +1,176 @@
+@inject ItemCatalog Catalog
+
+<div class="dialog-backdrop" @onclick="Close">
+    <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+        <header class="dialog-head">
+            <h3>@Title</h3>
+            <button class="icon-button" aria-label="@L.T("Schließen", "Close")" @onclick="Close">&#x2715;</button>
+        </header>
+
+        @if (!Catalog.Loaded)
+        {
+            <div class="loading-box">@L.T("Bilder werden geladen ...", "Loading pictures ...")</div>
+        }
+        else
+        {
+            <nav class="categories">
+                @for (int i = 0; i < ItemCatalog.CategoryKeys.Length; i++)
+                {
+                    var index = i;
+                    <button class="category @(index == category && filter.Length == 0 ? "active" : "")" @onclick="() => SelectCategory(index)">
+                        <img src="@ItemCatalog.CategoryIcon(index)" alt="" />
+                        <span>@ItemCatalog.CategoryName(index)</span>
+                    </button>
+                }
+            </nav>
+
+            <div class="filter">
+                <input placeholder="@L.T("Filtern (optional)", "Filter (optional)")" value="@filter" @oninput="e => SetFilter((string?)e.Value)" />
+                @if (filter.Length > 0)
+                {
+                    <button class="icon-button" aria-label="@L.T("Filter löschen", "Clear filter")" @onclick="() => SetFilter(null)">&#x2715;</button>
+                }
+            </div>
+
+            <div class="tiles">
+                @foreach (var entry in Visible.Take(shown))
+                {
+                    var e = entry;
+                    <button class="tile @(selected?.Id == e.Id ? "selected" : "")" title="@e.Name" @onclick="() => Select(e)">
+                        <ItemImage Src="@Catalog.Url(e.Picture)" Alt="@e.Name" />
+                        <span>@e.Name</span>
+                    </button>
+                }
+            </div>
+            @if (Visible.Count() > shown)
+            {
+                <div class="more"><button @onclick="() => shown += PageSize">@L.T("Mehr anzeigen", "Show more")</button></div>
+            }
+            else if (!Visible.Any())
+            {
+                <p class="hint center">@L.T("Hier ist nichts dabei.", "Nothing here.")</p>
+            }
+        }
+
+        <footer class="dialog-foot">
+            @if (selected is not null)
+            {
+                <div class="choice">
+                    <ItemImage Src="@Catalog.Url(SelectedPicture)" Alt="@selected.Name" Class="big" />
+                    <div class="choice-text">
+                        <strong>@selected.Name</strong>
+                        @if (selected.Variants.Count > 1)
+                        {
+                            <div class="variants">
+                                @foreach (var v in selected.Variants)
+                                {
+                                    var variant = v;
+                                    <button class="variant @(variant.Count == this.variant ? "active" : "")" @onclick="() => this.variant = variant.Count">
+                                        <ItemImage Src="@Catalog.Url(variant.Picture)" />
+                                    </button>
+                                }
+                            </div>
+                        }
+                        @if (maxStack > 1)
+                        {
+                            <div class="stepper">
+                                <button @onclick="() => SetAmount(amount - 1)" disabled="@(amount <= 1)">&#x2212;</button>
+                                <span>@amount</span>
+                                <button @onclick="() => SetAmount(amount + 1)" disabled="@(amount >= maxStack)">+</button>
+                                <button class="small" @onclick="() => SetAmount(maxStack)">Max</button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <span class="hint">@L.T("Tippe auf ein Bild, um es auszuwählen.", "Tap a picture to choose it.")</span>
+            }
+            <div class="foot-buttons">
+                @if (CanClear)
+                {
+                    <button class="ghost danger" @onclick="Clear">@L.T("Feld leeren", "Empty slot")</button>
+                }
+                <button class="primary" disabled="@(selected is null)" @onclick="Confirm">@L.T("Übernehmen", "Use")</button>
+            </div>
+        </footer>
+    </div>
+</div>
+
+@code {
+    private const int PageSize = 120;
+
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public Item? Current { get; set; }
+    [Parameter] public bool CanClear { get; set; }
+    [Parameter] public EventCallback<Item> Picked { get; set; }
+    [Parameter] public EventCallback Cleared { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private int category;
+    private string filter = string.Empty;
+    private int shown = PageSize;
+    private ItemCatalog.Entry? selected;
+    private ushort variant;
+    private int amount = 1;
+    private int maxStack = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Catalog.EnsureLoadedAsync();
+        if (Current is { IsNone: false } item && Catalog.Find(item.DisplayItemId) is { } entry)
+        {
+            category = entry.Category;
+            Select(entry);
+            if (entry.Variants.Any(v => v.Count == item.Count))
+                variant = item.Count;
+            if (maxStack > 1)
+                amount = Math.Clamp(item.Count + 1, 1, maxStack);
+        }
+    }
+
+    private IEnumerable<ItemCatalog.Entry> Visible => filter.Length > 0
+        ? Catalog.Items.Where(e => e.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
+        : Catalog.Items.Where(e => e.Category == category);
+
+    private string SelectedPicture =>
+        selected!.Variants.FirstOrDefault(v => v.Count == variant)?.Picture ?? selected.Picture;
+
+    private void SelectCategory(int index)
+    {
+        category = index;
+        filter = string.Empty;
+        shown = PageSize;
+    }
+
+    private void SetFilter(string? value)
+    {
+        filter = value?.Trim() ?? string.Empty;
+        shown = PageSize;
+    }
+
+    private void Select(ItemCatalog.Entry entry)
+    {
+        selected = entry;
+        variant = entry.Variants.Count > 0 ? entry.Variants[0].Count : (ushort)0;
+        maxStack = ItemInfo.TryGetMaxStackCount(entry.Id, out var max) ? Math.Max(1, (int)max) : 1;
+        amount = 1;
+    }
+
+    private void SetAmount(int value) => amount = Math.Clamp(value, 1, maxStack);
+
+    private Task Confirm()
+    {
+        if (selected is null)
+            return Task.CompletedTask;
+        var item = new Item { ItemId = selected.Id, SystemParam = 0, AdditionalParam = 0, FreeParam = 0 };
+        // stackable items keep the amount minus one in Count, furniture keeps its variant there
+        item.Count = maxStack > 1 ? (ushort)(amount - 1) : variant;
+        return Picked.InvokeAsync(item);
+    }
+
+    private Task Clear() => Cleared.InvokeAsync();
+
+    private Task Close() => Closed.InvokeAsync();
+}

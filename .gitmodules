@@ -1,0 +1,3 @@
+[submodule "external/NHSE"]
+	path = external/NHSE
+	url = https://github.com/kwsch/NHSE.git

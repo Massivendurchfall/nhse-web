@@ -1,0 +1,37 @@
+<div class="stat">
+    <img class="stat-icon" src="@Icon" alt="" />
+    <div class="stat-body">
+        <span class="stat-label">@Label</span>
+        <span class="stat-value">@Value.ToString("N0", Format)</span>
+        <div class="stat-edit">
+            <input type="number" min="0" max="@Max" value="@Value" aria-label="@Label" @onchange="Changed" />
+            @foreach (var step in Steps)
+            {
+                var s = step;
+                <button type="button" class="small" @onclick="() => Apply((uint)Math.Min((long)Value + s, Max))">+@s.ToString("N0", Format)</button>
+            }
+            <button type="button" class="small" @onclick="() => Apply(Max)">Max</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter] public string Icon { get; set; } = ItemCatalog.Fallback;
+    [Parameter] public uint Value { get; set; }
+    [Parameter] public uint Max { get; set; }
+    [Parameter] public uint[] Steps { get; set; } = [];
+    [Parameter] public EventCallback<uint> ValueChanged { get; set; }
+
+    private static readonly System.Globalization.CultureInfo Format =
+        System.Globalization.CultureInfo.GetCultureInfo(L.German ? "de-DE" : "en-US");
+
+    private Task Changed(ChangeEventArgs e) =>
+        long.TryParse(e.Value?.ToString(), out var v) ? Apply((uint)Math.Clamp(v, 0, Max)) : Task.CompletedTask;
+
+    private Task Apply(uint value)
+    {
+        Value = value;
+        return ValueChanged.InvokeAsync(value);
+    }
+}

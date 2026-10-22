@@ -1,0 +1,49 @@
+# NHSE Web
+
+A save editor for Animal Crossing: New Horizons that runs entirely in your browser. It is built on [NHSE](https://github.com/kwsch/NHSE) by kwsch and Blazor WebAssembly. The save is decrypted, edited and encrypted again on your device, nothing is uploaded.
+
+**Open it: https://massivendurchfall.github.io/nhse/**
+
+## Features
+
+- **Player:** name, island name, wallet, bank and Nook Miles, with the passport photo
+- **Pockets:** pick items from a picture grid with categories, furniture variants and stack size
+- **Unlock:** all DIY recipes and all reactions
+- **Open a save folder** in Chrome or Edge and save straight back into it, or **open a ZIP** in any browser and get a new ZIP
+- A backup ZIP of the original files is downloaded before the first write
+- German and English, following the browser language
+
+## Where is my save?
+
+- **Eden, yuzu, Citron:** right click the game and open the save data location. It is the folder `01006F8002326000`.
+- **Switch:** back up the save with JKSV or Checkpoint and open that folder or ZIP.
+
+Close the game before you save, and always keep a backup.
+
+## Build
+
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+
+```
+git clone --recursive https://github.com/Massivendurchfall/nhse-web
+cd nhse-web
+dotnet run --project src/NHSE.Web
+```
+
+`dotnet publish src/NHSE.Web -c Release -o publish` writes the static site to `publish/wwwroot`. To host it in a subfolder, change `<base href="/" />` in `index.html` to that folder, for example `/nhse/`.
+
+## How it works
+
+- `external/NHSE` is the upstream NHSE repository as a submodule. `src/NHSE.Core.Web` compiles its NHSE.Core sources for WebAssembly without changes, except for the AES-CTR code: `System.Security.Cryptography.Aes` is not available in the browser, so `src/NHSE.Core.Web/Crypto/AesCtr.cs` is a managed AES-128 with the same API.
+- `src/NHSE.Web` is the Blazor WebAssembly app. Folder access uses the File System Access API, with a folder upload and ZIP fallback for other browsers.
+- `tools/build_catalog.py` builds `wwwroot/data/catalog.json` from the Norviah/animal-crossing data. It maps item IDs to pictures and categories; item names come from NHSE in the player's language.
+- `tools/SaveCheck` checks the managed AES against .NET's AES, loads a save folder, verifies every hash and runs a save round trip. Use it on a copy of a save only.
+
+## Credits and license
+
+- [NHSE](https://github.com/kwsch/NHSE) by kwsch and contributors, GPL-3.0. The menu icons come from NHSE.Sprites.
+- Item data from [Norviah/animal-crossing](https://github.com/Norviah/animal-crossing), MIT, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+- Item pictures are loaded from [acnhcdn.com](https://acnhcdn.com) and are not part of this repository.
+- Animal Crossing is a trademark of Nintendo. This project is not affiliated with or endorsed by Nintendo.
+
+This project is licensed under the [GNU General Public License v3.0](LICENSE).

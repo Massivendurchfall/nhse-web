@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Builds NHSE.Core from the unmodified upstream sources in external/NHSE for the browser.
+    The only swap is Encryption/AesCtr.cs: .NET has no AES on WebAssembly, so Crypto/AesCtr.cs
+    provides the same internal class with a managed AES-128 implementation.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>NHSE.Core</AssemblyName>
+    <RootNamespace>NHSE.Core</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <NhseCore>$(MSBuildThisFileDirectory)..\..\external\NHSE\NHSE.Core\</NhseCore>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(NhseCore)**\*.cs"
+             Exclude="$(NhseCore)bin\**;$(NhseCore)obj\**;$(NhseCore)Encryption\AesCtr.cs"
+             LinkBase="NHSE.Core" />
+    <Compile Include="Crypto\AesCtr.cs" />
+    <Compile Include="MemorySaveFileProvider.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SaveCheck" />
+  </ItemGroup>
+
+  <!-- Same manifest names as upstream: NHSE.Core.Resources.<folder>.<file> -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(NhseCore)Resources\**\*" LinkBase="Resources" />
+  </ItemGroup>
+
+</Project>

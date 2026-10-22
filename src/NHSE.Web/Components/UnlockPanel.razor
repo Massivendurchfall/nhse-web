@@ -1,0 +1,71 @@
+@inject SaveSession Session
+
+<div class="unlock-grid">
+    <section class="card unlock">
+        <img src="menuicon/BookRecipe.png" alt="" />
+        <h3>@L.T("Bastelanleitungen", "DIY recipes")</h3>
+        <div class="progress"><span style="width: @(Percent(known, total))%"></span></div>
+        <p>@L.T($"{known} von {total} gelernt", $"{known} of {total} learned")</p>
+        <button class="primary" @onclick="LearnAll" disabled="@(known == total)">
+            @(known == total ? L.T("Alle gelernt", "All learned") : L.T("Alle lernen", "Learn all"))
+        </button>
+        <p class="hint">@L.T("Ohne die Bausätze für Brücken und den Campingplatz, die braucht die Geschichte des Spiels.",
+                             "Without the bridge and campsite kits that the game's story needs.")</p>
+    </section>
+
+    <section class="card unlock">
+        <img src="menuicon/Book.png" alt="" />
+        <h3>@L.T("Reaktionen", "Reactions")</h3>
+        <div class="progress"><span style="width: @(Percent(reactions, AllReactionCount))%"></span></div>
+        <p>@L.T($"{reactions} von {AllReactionCount} bekannt", $"{reactions} of {AllReactionCount} known")</p>
+        <button class="primary" @onclick="AllReactions" disabled="@(reactions >= AllReactionCount)">
+            @(reactions >= AllReactionCount ? L.T("Alle bekannt", "All known") : L.T("Alle freischalten", "Unlock all"))
+        </button>
+        <p class="hint">@L.T("Neue Reaktionen erscheinen im Reaktionsmenü mit ZR.", "New reactions show up in the reaction menu with ZR.")</p>
+    </section>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Player Player { get; set; } = null!;
+
+    private int known;
+    private int total;
+    private int reactions;
+
+    protected override void OnParametersSet() => Count();
+
+    // same rule as NHSE's AddMissingReactions: every defined reaction except None and the unused ones
+    private static readonly int AllReactionCount = Enum.GetValues<Reaction>()
+        .Count(r => r != Reaction.None && !r.ToString().StartsWith("UNUSED", StringComparison.Ordinal));
+
+    private static int Percent(int value, int max) => max <= 0 ? 0 : Math.Min(100, value * 100 / max);
+
+    private void Count()
+    {
+        var book = Player.Personal.GetRecipeBook();
+        var learnable = RecipeList.Recipes.Keys
+            .Where(k => k is not (RecipeList.BridgeConstructionKit or RecipeList.CampsiteConstructionKit))
+            .ToList();
+        total = learnable.Count;
+        known = learnable.Count(k => book.GetIsKnown(k));
+        reactions = Player.Personal.Reactions.ManpuBit.Count(r => r != 0);
+    }
+
+    private void LearnAll()
+    {
+        var book = Player.Personal.GetRecipeBook();
+        book.GiveAll(RecipeList.Recipes);
+        Player.Personal.SetRecipeBook(book);
+        Session.MarkDirty();
+        Count();
+    }
+
+    private void AllReactions()
+    {
+        var store = Player.Personal.Reactions;
+        store.AddMissingReactions();
+        Player.Personal.Reactions = store;
+        Session.MarkDirty();
+        Count();
+    }
+}

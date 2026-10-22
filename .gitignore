@@ -1,0 +1,6 @@
+bin/
+obj/
+# never commit save data
+src/NHSE.Web/wwwroot/testsave/
+*.dat
+publish/

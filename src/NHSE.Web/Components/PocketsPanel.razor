@@ -1,0 +1,101 @@
+@inject SaveSession Session
+@inject ItemCatalog Catalog
+
+<section class="card">
+    <header class="card-head">
+        <h3>@L.T("Taschen", "Pockets")</h3>
+        <span class="pill">@L.T($"{used} von {unlocked} Feldern belegt", $"{used} of {unlocked} slots used")</span>
+    </header>
+    <p class="hint">@L.T("Tippe auf ein Feld und wähle den Gegenstand per Bild aus.", "Tap a slot and pick the item by its picture.")</p>
+
+    <div class="pocket-grid">
+        @for (int i = 0; i < slots.Count; i++)
+        {
+            var index = i;
+            var item = slots[i];
+            var locked = index >= unlocked;
+            <button class="pslot @(item.IsNone ? "empty" : "") @(locked ? "locked" : "")" disabled="@locked"
+                    title="@(item.IsNone ? L.T($"Feld {index + 1}, leer", $"Slot {index + 1}, empty") : GameInfo.Strings.GetItemName(item))"
+                    @onclick="() => editing = index">
+                @if (item.IsNone)
+                {
+                    <span class="plus">+</span>
+                }
+                else
+                {
+                    <ItemImage Src="@Catalog.PictureOf(item)" Alt="@GameInfo.Strings.GetItemName(item)" />
+                    @if (StackOf(item) > 1 && item.Count > 0)
+                    {
+                        <span class="badge">@(item.Count + 1)</span>
+                    }
+                }
+            </button>
+        }
+    </div>
+    @if (unlocked < slots.Count)
+    {
+        <p class="hint">@L.T("Graue Felder schaltest du im Spiel mit einer Taschenerweiterung frei.",
+                             "Grey slots unlock in the game with a pocket upgrade.")</p>
+    }
+</section>
+
+@if (editing >= 0)
+{
+    <ItemPickerDialog Title="@L.T($"Feld {editing + 1}", $"Slot {editing + 1}")"
+                      Current="@slots[editing]" CanClear="@(!slots[editing].IsNone)"
+                      Picked="Put" Cleared="Clear" Closed="() => editing = -1" />
+}
+
+@code {
+    [Parameter, EditorRequired] public Player Player { get; set; } = null!;
+
+    private List<Item> slots = [];
+    private int unlocked;
+    private int editing = -1;
+    private Player? loadedFor;
+
+    private int used => slots.Take(unlocked).Count(s => !s.IsNone);
+
+    // Slots 1 to 20 live in Pocket, 21 to 40 in Bag; the counts say how many are usable.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!ReferenceEquals(loadedFor, Player))
+        {
+            loadedFor = Player;
+            var p = Player.Personal;
+            slots = [.. p.Pocket.Select(Copy), .. p.Bag.Select(Copy)];
+            unlocked = (int)Math.Min(40, p.PocketCount + p.BagCount);
+            editing = -1;
+        }
+        await Catalog.EnsureLoadedAsync();
+    }
+
+    private static Item Copy(Item item) => new()
+    {
+        ItemId = item.ItemId, SystemParam = item.SystemParam, AdditionalParam = item.AdditionalParam, FreeParam = item.FreeParam,
+    };
+
+    private static int StackOf(Item item) => ItemInfo.TryGetMaxStackCount(item, out var max) ? max : 1;
+
+    private void Store()
+    {
+        var p = Player.Personal;
+        p.Pocket = slots.Take(20).ToArray();
+        p.Bag = slots.Skip(20).Take(20).ToArray();
+        Session.MarkDirty();
+    }
+
+    private void Put(Item item)
+    {
+        slots[editing] = item;
+        editing = -1;
+        Store();
+    }
+
+    private void Clear()
+    {
+        slots[editing] = new Item { ItemId = Item.NONE };
+        editing = -1;
+        Store();
+    }
+}

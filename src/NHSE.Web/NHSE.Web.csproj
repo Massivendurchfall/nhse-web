@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.10" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.10" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NHSE.Core.Web\NHSE.Core.Web.csproj" />
+  </ItemGroup>
+
+  <!-- NHSE marshals structs and reads embedded resources; keep the whole assembly. -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="NHSE.Core" />
+  </ItemGroup>
+
+  <!-- wwwroot/testsave holds a local save copy for debugging and must never be published -->
+  <ItemGroup>
+    <Content Update="wwwroot\testsave\**" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+</Project>
