@@ -2,7 +2,7 @@
 
 A save editor for Animal Crossing: New Horizons that runs entirely in your browser. It is built on [NHSE](https://github.com/kwsch/NHSE) by kwsch and Blazor WebAssembly. The save is decrypted, edited and encrypted again on your device, nothing is uploaded.
 
-**Open it: https://massivendurchfall.github.io/nhse/**
+**Open it: https://apps.dtrx.duckdns.org/nhse/**
 
 ## Features
 
