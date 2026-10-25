@@ -132,7 +132,7 @@
 
     private IEnumerable<ItemCatalog.Entry> Visible => filter.Length > 0
         ? Catalog.Items.Where(e => e.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
-        : Catalog.Items.Where(e => e.Category == category);
+        : Catalog.Items.Where(e => ItemCatalog.InCategory(e, category));
 
     private string SelectedPicture =>
         selected!.Variants.FirstOrDefault(v => v.Count == variant)?.Picture ?? selected.Picture;

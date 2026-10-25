@@ -116,11 +116,13 @@ public sealed class SaveSession(IJSRuntime js)
                $"museum {main.Museum.GetItems().Count(i => !i.IsNone)}, weeds {weeds}, " +
                $"ground roots {main.GetFieldItemLayer0().Count(t => t.IsRoot)} (furniture {main.GetFieldItemLayer0().Count(t => t.IsRoot && t.ItemId < Item.FieldItemMin)}), " +
                $"path tiles {main.GetTerrainTiles().Count(t => t.UnitModelRoad.IsRoad)}, " +
+               $"bridges [{string.Join(" ", main.Buildings.Where(b => b.BuildingType == BuildingType.Bridge).Select(b => $"{(BridgeType)b.Type}@{b.X},{b.Y}/a{b.Angle}"))}], " +
                $"catalog {Enumerable.Range(1, GameInfo.Strings.itemlist.Length - 1).Count(i => FlagUtil.GetFlag(p.Data, p.Offsets.ItemCollectBit, i))}, " +
                $"achievement counts {p.Achievements.Counts.Count(c => c > 0)}, birthday {p.Birthday}, fruit {p.ProfileFruit}/{main.SpecialtyFruit}, " +
                $"hemisphere {main.Hemisphere}, flower {main.SpecialtyFlower}, airport {main.AirportThemeColor}, visitors {string.Join("/", main.Visitor.VisitorNPC)}, " +
                $"camp {main.CampsiteStatus} {main.CampsiteVillagerSpeciesID}:{main.CampsiteVillagerVariantID}, recycle {main.RecycleBin.Count(i => !i.IsNone)}, " +
                $"pockets {p.PocketCount}+{p.BagCount}, " +
+               $"house 0 room 0 floor [{string.Join(" ", new RoomManager(main.GetPlayerHouse(0).GetRoom(0)).Layers[0].Tiles.Where(t => t.IsRoot).Select(t => $"{GameInfo.Strings.GetItemName(t)}/r{t.Rotation}"))}], " +
                $"design 0 '{main.GetDesign(0).DesignName}' {main.GetDesign(0).UsageCompatibility:X4} by {main.GetDesign(0).PlayerName}, flag '{main.FlagMyDesign.DesignName}', " +
                (main.GetVillager(0) is var v0 && !VillagerCatalog.IsEmpty(v0)
                    ? $"villager 0 {v0.Personality} friendship {v0.GetMemory(0).Friendship} nick {v0.GetMemory(0).NickName} wear {v0.WearStockList.Count(i => !i.IsNone)}: {GameInfo.Strings.GetItemName(v0.WearStockList[0])}, "

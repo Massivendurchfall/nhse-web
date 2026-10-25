@@ -29,17 +29,21 @@ public sealed class IslandMap(MainSave main)
 
     public (int X, int Y) GetAbsolute(int relX, int relY) => Config.GetCoordinatesAbsolute(relX, relY);
 
-    /// <summary>Writes both item layers and the terrain (paths) back into main.dat. Buildings are not edited here.</summary>
+    /// <summary>Writes both item layers, the terrain (paths) and the buildings (bridges) back into main.dat.</summary>
     public void WriteTo(MainSave save)
     {
         save.SetFieldItemLayer0(Layer(0).Tiles);
         save.SetFieldItemLayer1(Layer(1).Tiles);
         save.SetTerrainTiles(Terrain.Tiles);
+        save.Buildings = Buildings;
     }
 
-    public sealed record State(ulong[] Items, byte[] Terrain);
+    public sealed record State(ulong[] Items, byte[] Terrain, byte[] Buildings);
 
-    public State Snapshot() => new([.. Layer(0).Tiles.Select(t => t.RawValue), .. Layer(1).Tiles.Select(t => t.RawValue)], Terrain.DumpAll());
+    public State Snapshot() => new(
+        [.. Layer(0).Tiles.Select(t => t.RawValue), .. Layer(1).Tiles.Select(t => t.RawValue)],
+        Terrain.DumpAll(),
+        Building.SetArray(Buildings));
 
     public void Restore(State snapshot)
     {
@@ -50,6 +54,160 @@ public sealed class IslandMap(MainSave main)
         for (int i = 0; i < second.Length; i++)
             second[i].RawValue = snapshot.Items[first.Length + i];
         Terrain.ImportAll(snapshot.Terrain);
+        var buildings = Building.GetArray(snapshot.Buildings);
+        for (int i = 0; i < buildings.Length; i++)
+            Buildings[i].CopyFrom(buildings[i]);
+    }
+
+    // ---- bridges ----
+
+    public const int MaxBridges = 8;
+
+    public static IReadOnlyList<string> BridgeStyles { get; } = ["Log", "Suspension", "Stone", "Bricks", "Wood", "Iron", "Japanese", "Red"];
+
+    public static string BridgeStyleName(string style) => style switch
+    {
+        "Log" => L.T("Baumstammbrücke", "Log bridge"),
+        "Suspension" => L.T("Hängebrücke", "Suspension bridge"),
+        "Stone" => L.T("Steinbrücke", "Stone bridge"),
+        "Bricks" => L.T("Ziegelbrücke", "Brick bridge"),
+        "Wood" => L.T("Holzbrücke", "Wooden bridge"),
+        "Iron" => L.T("Eisenbrücke", "Iron bridge"),
+        "Japanese" => L.T("Zen-Brücke", "Zen bridge"),
+        "Red" => L.T("Rote Zen-Brücke", "Red zen bridge"),
+        _ => style,
+    };
+
+    /// <summary>Style and length of a bridge from its type name, e.g. BridgeLog04 is a log bridge over 4 tiles.</summary>
+    public static (string Style, int Length, bool Diagonal) BridgeInfo(Building bridge)
+    {
+        var name = ((BridgeType)bridge.Type).ToString();
+        var diagonal = name.Contains("Diagonal", StringComparison.Ordinal);
+        var style = name["Bridge".Length..].Replace("Diagonal", string.Empty).TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9');
+        var length = int.TryParse(name[^2..], out var l) ? l : 4;
+        return (style, diagonal ? 4 : length, diagonal);
+    }
+
+    /// <summary>
+    /// The area a building covers on the map, in absolute item tiles. Straight bridges are 2 terrain tiles
+    /// wide and as long as their type says, running north to south when the angle is odd; everything else
+    /// is drawn as the 4 x 4 square around its position, like NHSE does.
+    /// </summary>
+    public static (int X, int Y, int W, int H) Footprint(Building building)
+    {
+        if (building.BuildingType == BuildingType.Bridge && BridgeInfo(building) is { Diagonal: false } info)
+        {
+            var span = info.Length * 2;
+            return (building.Angle & 1) == 1
+                ? (building.X - 2, building.Y - info.Length, 4, span)
+                : (building.X - info.Length, building.Y - 2, span, 4);
+        }
+        return (building.X - 2, building.Y - 2, 4, 4);
+    }
+
+    public Building? BuildingAt(int absX, int absY) => Buildings.FirstOrDefault(b =>
+        b.BuildingType != 0 && Footprint(b) is var (x, y, w, h) && absX >= x && absX < x + w && absY >= y && absY < y + h);
+
+    private bool IsRiver(int relX, int relY) => IsTerrain(relX, relY) && Terrain.GetTile(relX, relY).UnitModel.IsRiver;
+
+    /// <summary>
+    /// Plans a straight bridge over the river at the tapped tile, the way the island's own bridges lie:
+    /// across the narrow side of the river, 2 terrain tiles wide, from bank to bank over 3 to 5 tiles,
+    /// with flat land of the same height at both ends. Returns why it does not fit, or null.
+    /// </summary>
+    public string? PlanBridge(int absX, int absY, string style, out Building bridge)
+    {
+        bridge = new Building();
+        if (!TryGetTerrain(absX, absY, out var tx, out var ty) || !IsRiver(tx, ty))
+            return L.T("Tippe auf das Wasser eines Flusses.", "Tap the water of a river.");
+        if (Buildings.Count(b => b.BuildingType == BuildingType.Bridge) >= MaxBridges)
+            return L.T($"Die Insel hat schon {MaxBridges} Brücken, mehr erlaubt das Spiel nicht.", $"The island already has {MaxBridges} bridges, the game allows no more.");
+
+        int Run(int dx, int dy)
+        {
+            int n = 0;
+            while (IsRiver(tx + (dx * (n + 1)), ty + (dy * (n + 1))))
+                n++;
+            return n;
+        }
+        var (up, down, left, right) = (Run(0, -1), Run(0, 1), Run(-1, 0), Run(1, 0));
+        var vertical = up + down <= left + right; // cross the river the short way
+        var length = vertical ? up + down + 1 : left + right + 1;
+        if (length is < 3 or > 5)
+            return L.T($"Der Fluss ist hier {length} Felder breit. Brücken gibt es für 3 bis 5 Felder.", $"The river is {length} tiles wide here. Bridges exist for 3 to 5 tiles.");
+
+        string? Lanes(int side)
+        {
+            int? height = null;
+            foreach (var lane in new[] { 0, side })
+            {
+                for (int k = -1; k <= length; k++)
+                {
+                    var (x, y) = vertical ? (tx + lane, ty - up + k) : (tx - left + k, ty + lane);
+                    var end = k == -1 || k == length;
+                    if (!IsTerrain(x, y))
+                        return L.T("Die Brücke würde über den Rand der Insel ragen.", "The bridge would reach past the edge of the island.");
+                    var tile = Terrain.GetTile(x, y);
+                    if (!end && !tile.UnitModel.IsRiver)
+                        return L.T("Der Fluss ist an dieser Stelle nicht gleichmäßig breit. Versuch es ein Stück weiter.", "The river is not equally wide here. Try a bit further along.");
+                    if (end && tile.UnitModel != TerrainUnitModel.Base)
+                        return L.T("An einem Ende der Brücke ist kein flaches Ufer.", "One end of the bridge has no flat bank.");
+                    if (end && height is { } h && h != tile.Elevation)
+                        return L.T("Die beiden Ufer liegen unterschiedlich hoch.", "The two banks are at different heights.");
+                    if (end)
+                        height = tile.Elevation;
+                }
+            }
+            // a bridge spans a river, not the edge of a pond: water has to flow on past both sides
+            foreach (var lane in new[] { Math.Min(0, side) - 1, Math.Max(0, side) + 1 })
+            {
+                for (int k = 0; k < length; k++)
+                {
+                    var (x, y) = vertical ? (tx + lane, ty - up + k) : (tx - left + k, ty + lane);
+                    if (!IsRiver(x, y))
+                        return L.T("Neben der Brücke muss auf beiden Seiten noch Wasser sein. Versuch es ein Stück weiter im Fluss.", "There has to be water on both sides of the bridge. Try a bit further along the river.");
+                }
+            }
+            return null;
+        }
+
+        // the half of the tile that was tapped picks the second lane, the other side is the fallback
+        var side = vertical ? ((absX & 1) == 0 ? -1 : 1) : ((absY & 1) == 0 ? -1 : 1);
+        var error = Lanes(side);
+        if (error is not null && Lanes(-side) is null)
+        {
+            side = -side;
+            error = null;
+        }
+        if (error is not null)
+            return error;
+
+        var (startX, startY) = vertical ? (Math.Min(tx, tx + side), ty - up) : (tx - left, Math.Min(ty, ty + side));
+        var (ax, ay) = manager.ConfigTerrain.GetCoordinatesAbsolute(startX, startY);
+        bridge.BuildingType = BuildingType.Bridge;
+        bridge.Type = (ushort)Enum.Parse<BridgeType>($"Bridge{style}{length:00}");
+        bridge.Angle = (byte)(vertical ? 1 : 0);
+        bridge.X = (ushort)(vertical ? (ax * 2) + 2 : (ax * 2) + length);
+        bridge.Y = (ushort)(vertical ? (ay * 2) + length : (ay * 2) + 2);
+
+        var (fx, fy, fw, fh) = Footprint(bridge);
+        foreach (var other in Buildings.Where(b => b.BuildingType != 0))
+        {
+            var (ox, oy, ow, oh) = Footprint(other);
+            if (fx < ox + ow && ox < fx + fw && fy < oy + oh && oy < fy + fh)
+                return L.T("Dort steht schon eine Brücke oder ein Gebäude.", "A bridge or building is already there.");
+        }
+        return null;
+    }
+
+    /// <summary>Puts a planned bridge into the first free building slot.</summary>
+    public bool AddBuilding(Building building)
+    {
+        var free = Buildings.FirstOrDefault(b => b.BuildingType == 0);
+        if (free is null)
+            return false;
+        free.CopyFrom(building);
+        return true;
     }
 
     public LayerTerrain Terrain => manager.LayerTerrain;

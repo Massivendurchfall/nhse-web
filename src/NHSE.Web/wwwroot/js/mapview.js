@@ -169,16 +169,15 @@ export function disposeMap() {
     s = null;
 }
 
+// buildings come as [left, top, width, height, colour] in item tiles: bridges at their real size,
+// everything else as the 4 x 4 square around its position, like NHSE
 function drawBuildings(ctx, scale, originX, originY) {
-    ctx.fillStyle = 'rgba(242, 193, 78, 0.85)';
     ctx.strokeStyle = 'rgba(74, 66, 55, 0.7)';
     ctx.lineWidth = Math.max(1, scale / 8);
-    for (const [x, y] of s.buildings) {
-        // buildings are drawn as 4 x 4 tile squares around their position, like NHSE
-        const left = (x - 2 - originX) * scale;
-        const top = (y - 2 - originY) * scale;
-        ctx.fillRect(left, top, 4 * scale, 4 * scale);
-        ctx.strokeRect(left, top, 4 * scale, 4 * scale);
+    for (const [x, y, w, h, color] of s.buildings) {
+        ctx.fillStyle = color;
+        ctx.fillRect((x - originX) * scale, (y - originY) * scale, w * scale, h * scale);
+        ctx.strokeRect((x - originX) * scale, (y - originY) * scale, w * scale, h * scale);
     }
 }
 

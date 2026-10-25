@@ -7,12 +7,13 @@ A save editor for Animal Crossing: New Horizons that runs entirely in your brows
 ## Features
 
 - **Player:** name, island name, wallet, bank and Nook Miles, with the passport photo
-- **Pockets:** pick items from a picture grid with categories, furniture variants and stack size
+- **Pockets:** pick items from a picture grid with categories (construction, moving and ladder kits in a category of their own), furniture variants and stack size
 - **Home storage:** the same picture picker for every storage slot, add to the first free slot, expand to the largest size
 - **Unlock:** all DIY recipes (also marked as crafted) and all reactions, the catalog (everything, furniture and clothing, fish, bugs, sea creatures or art, with all colour variants) and the Nook Miles achievements, all at once or one by one
 - **Profile:** birthday, native fruit in the passport, hotel tickets and Poki from version 3.0, both pocket upgrades
 - **Island:** donate everything to the museum or piece by piece with pictures, remove weeds, fill holes, pick up branches, water all flowers, set this week's turnip prices, hemisphere, native and sister fruit and flower, airport colour, the plaza visitors of the week, the campsite guest and the recycle box
-- **Map:** an overview of the whole island and a detail view with pictures; place items and nature (trees, flowers, bushes, vegetables, rocks, fences, weeds) by tapping or painting with a brush, remove with a brush, clear or fill a rectangle, lay and remove paths whose edge pieces are picked from their neighbours, on the ground or on top of furniture, with undo; save the whole map as a picture
+- **Map:** an overview of the whole island and a detail view with pictures; place items and nature (trees, flowers, bushes, vegetables, rocks, fences, weeds) by tapping or painting with a brush, remove with a brush, clear or fill a rectangle, lay and remove paths whose edge pieces are picked from their neighbours, on the ground or on top of furniture, with undo; change the amount of a stack lying on the ground, replace or remove every identical item on the island at once; build bridges over a river (straight, 3 to 5 tiles, up to 8), change their style or tear them down; save the whole map as a picture
+- **House:** every room of each player's house, item by item on the floor, on furniture, on the walls, rugs and ceiling; place, rotate, replace and remove furniture
 - **Designs:** normal and PRO designs, the Able Sisters' displays and the island flag as pictures; turn any picture into a design (32 x 32, 15 colours and transparency), load and save `.nhd`/`.nhpd` files, save designs as PNG
 - **Residents:** swap a villager for any other from a picture grid (house, furniture and clothes included), edit catchphrases, personality, friendship and nickname per player, wardrobe and owned furniture, mark villagers as moving out, max friendship
 - **Open a save folder** in Chrome or Edge and save straight back into it, or **open a ZIP** in any browser and get a new ZIP

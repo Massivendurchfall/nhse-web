@@ -14,7 +14,17 @@ public sealed class ItemCatalog(HttpClient http)
     public sealed record Entry(ushort Id, int Category, string Name, string Picture, IReadOnlyList<Variant> Variants);
 
     public static readonly string[] CategoryKeys =
-        ["tools", "materials", "furniture", "interior", "clothing", "critters", "museum", "other"];
+        ["tools", "materials", "furniture", "interior", "clothing", "critters", "museum", "other", "kits"];
+
+    /// <summary>The picker's own category: kits sit among the materials in the game, but are easier to find on their own.</summary>
+    public static readonly int KitsCategory = Array.IndexOf(CategoryKeys, "kits");
+
+    // construction, moving, housing, ladder, marker and customization kits (ids from NHSE's English item names)
+    private static readonly HashSet<ushort> Kits =
+        [2513, 2756, 3349, 4310, 4311, 4411, 5166, 5358, 5359, 5360, 5361, 5827, 5828, 5829, 6841, 7211, 13526, 13530, 13534, 14470];
+
+    public static bool InCategory(Entry entry, int category) =>
+        category == KitsCategory ? Kits.Contains(entry.Id) : entry.Category == category;
 
     private readonly Dictionary<ushort, Entry> byId = [];
     private Task? loading;
@@ -78,6 +88,7 @@ public sealed class ItemCatalog(HttpClient http)
         "clothing" => L.T("Kleidung", "Clothing"),
         "critters" => L.T("Fische und Insekten", "Fish and bugs"),
         "museum" => L.T("Fossilien und Kunst", "Fossils and art"),
+        "kits" => L.T("Bausätze", "Kits"),
         _ => L.T("Sonstiges", "Other"),
     };
 
@@ -91,6 +102,7 @@ public sealed class ItemCatalog(HttpClient http)
         "clothing" => "menuicon/Tops.png",
         "critters" => "menuicon/FishBlackbass.png",
         "museum" => "menuicon/Fossil.png",
+        "kits" => "menuicon/TentWhite.png",
         _ => "menuicon/Present.png",
     };
 }

@@ -19,6 +19,7 @@
             <button class="@(mode == Mode.Erase ? "active" : "")" @onclick="() => SetMode(Mode.Erase)">@L.T("Entfernen", "Remove")</button>
             <button class="@(mode == Mode.Area ? "active" : "")" @onclick="() => SetMode(Mode.Area)">@L.T("Bereich", "Area")</button>
             <button class="@(mode == Mode.Paths ? "active" : "")" @onclick="() => SetMode(Mode.Paths)">@L.T("Wege", "Paths")</button>
+            <button class="@(mode == Mode.Bridges ? "active" : "")" @onclick="() => SetMode(Mode.Bridges)">@L.T("Brücken", "Bridges")</button>
         </div>
         <div class="segmented">
             <button class="@(across == 16 ? "active" : "")" @onclick="() => Zoom(16)">@L.T("Nah", "Close")</button>
@@ -99,6 +100,35 @@
                 <BrushSize Value="@size" ValueChanged="SetSize" />
                 break;
 
+            case Mode.Bridges:
+                @if (selectedBridge is { } bridge)
+                {
+                    var info = IslandMap.BridgeInfo(bridge);
+                    <div class="brush-text">
+                        <strong>@IslandMap.BridgeStyleName(info.Style)</strong>
+                        <span class="hint">@L.T($"{info.Length} Felder lang. Tippe auf einen Stil, um ihn zu ändern.", $"{info.Length} tiles long. Tap a style to change it.")</span>
+                    </div>
+                }
+                else
+                {
+                    <span class="hint grow">@L.T($"Wähle einen Stil und tippe auf das Wasser eines Flusses. Die Brücke legt sich quer über die schmale Seite, {bridgeCount} von {IslandMap.MaxBridges} Brücken sind gebaut.",
+                                                 $"Pick a style and tap the water of a river. The bridge spans the narrow side, {bridgeCount} of {IslandMap.MaxBridges} bridges are built.")</span>
+                }
+                <div class="path-types">
+                    @foreach (var st in IslandMap.BridgeStyles)
+                    {
+                        var style = st;
+                        var active = selectedBridge is { } b ? IslandMap.BridgeInfo(b).Style == style : bridgeStyle == style;
+                        <button class="path-type @(active ? "active" : "")" @onclick="() => SetBridgeStyle(style)">@IslandMap.BridgeStyleName(style)</button>
+                    }
+                </div>
+                @if (selectedBridge is not null)
+                {
+                    <button class="small" @onclick="() => { selectedBridge = null; DrawView(); }">@L.T("Neue Brücke", "New bridge")</button>
+                    <button class="small danger" @onclick="RemoveBridge">@L.T("Brücke abreißen", "Remove bridge")</button>
+                }
+                break;
+
             case Mode.Look when selected is { } sel:
                 var tile = map!.Layer(layerIndex).GetTile(sel.RelX, sel.RelY);
                 @if (tile.IsNone)
@@ -113,12 +143,27 @@
                 }
                 else
                 {
+                    var same = SameCount(tile);
                     <ItemImage Src="@Picture(tile)" Alt="@FieldItems.Name(tile)" />
                     <div class="brush-text">
                         <strong>@FieldItems.Name(tile)</strong>
-                        <span class="hint">@Position(sel)</span>
+                        <span class="hint">@Position(sel)@(same > 1 ? L.T($", {same} gleiche auf der Insel", $", {same} alike on the island") : "")</span>
                     </div>
+                    @if (StackOf(tile) > 1)
+                    {
+                        <div class="stepper">
+                            <button @onclick="() => SetAmount(tile.Count)" disabled="@(tile.Count == 0)">&#x2212;</button>
+                            <span>@(tile.Count + 1)</span>
+                            <button @onclick="() => SetAmount(tile.Count + 2)" disabled="@(tile.Count + 1 >= StackOf(tile))">+</button>
+                            <button class="small" @onclick="() => SetAmount(StackOf(tile))">Max</button>
+                        </div>
+                    }
                     <button class="small" @onclick="() => picking = tile.IsFieldItem ? Picking.ReplaceNature : Picking.Replace">@L.T("Ersetzen", "Replace")</button>
+                    @if (same > 1)
+                    {
+                        <button class="small" @onclick="() => picking = tile.IsFieldItem ? Picking.ReplaceAllNature : Picking.ReplaceAll">@L.T($"Alle {same} ersetzen", $"Replace all {same}")</button>
+                        <button class="small danger" @onclick="RemoveAllSame">@L.T($"Alle {same} entfernen", $"Remove all {same}")</button>
+                    }
                     <button class="small danger" @onclick="RemoveSelected">@L.T("Entfernen", "Remove")</button>
                 }
                 break;
@@ -150,24 +195,24 @@
     {
         <p class="hint center">@message</p>
     }
-    <p class="hint">@L.T("Stell nichts ins Wasser, auf Klippen oder in Gebäude, das mag das Spiel nicht. Wege suchen sich ihre Ränder selbst. Klippen, Flüsse und Gebäude lassen sich hier nicht verändern.",
-                         "Do not put anything into water, on cliffs or into buildings, the game does not like that. Paths pick their edges by themselves. Cliffs, rivers and buildings cannot be changed here.")</p>
+    <p class="hint">@L.T("Stell nichts ins Wasser, auf Klippen oder in Gebäude, das mag das Spiel nicht. Wege suchen sich ihre Ränder selbst. Klippen, Flüsse, Rampen und Gebäude lassen sich hier nicht verändern, Brücken schon.",
+                         "Do not put anything into water, on cliffs or into buildings, the game does not like that. Paths pick their edges by themselves. Cliffs, rivers, inclines and buildings cannot be changed here, bridges can.")</p>
 </section>
 
-@if (picking is Picking.Brush or Picking.Replace)
+@if (picking is Picking.Brush or Picking.Replace or Picking.ReplaceAll)
 {
-    <ItemPickerDialog Title="@(picking == Picking.Brush ? L.T("Was möchtest du setzen?", "What do you want to place?") : L.T("Was soll hier liegen?", "What should lie here?"))"
-                      Current="@(picking == Picking.Replace && selected is { } s ? map!.Layer(layerIndex).GetTile(s.RelX, s.RelY) : brush)"
+    <ItemPickerDialog Title="@(picking switch { Picking.Brush => L.T("Was möchtest du setzen?", "What do you want to place?"), Picking.ReplaceAll => L.T("Womit sollen alle gleichen ersetzt werden?", "What should replace all alike?"), _ => L.T("Was soll hier liegen?", "What should lie here?") })"
+                      Current="@(picking != Picking.Brush && selected is { } s ? map!.Layer(layerIndex).GetTile(s.RelX, s.RelY) : brush)"
                       Picked="Picked" Closed="() => picking = Picking.None" />
 }
-else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
+else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.ReplaceAllNature)
 {
     <NaturePickerDialog Picked="PickedNature" Closed="() => picking = Picking.None" />
 }
 
 @code {
-    private enum Mode { Look, Place, Erase, Area, Paths }
-    private enum Picking { None, Brush, NatureBrush, Replace, ReplaceNature }
+    private enum Mode { Look, Place, Erase, Area, Paths, Bridges }
+    private enum Picking { None, Brush, NatureBrush, Replace, ReplaceNature, ReplaceAll, ReplaceAllNature }
     private readonly record struct Spot(int RelX, int RelY);
     private readonly record struct Area(int X, int Y, int W, int H);
 
@@ -197,6 +242,10 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
     private IslandMap.State? strokeStart;
     private bool strokeChanged;
     private (int X0, int Y0, int X1, int Y1)? dirtyTerrain;
+    private string bridgeStyle = "Log";
+    private Building? selectedBridge;
+
+    private int bridgeCount => map!.Buildings.Count(b => b.BuildingType == BuildingType.Bridge);
 
     private MainSave Main => Session.Save!.Main;
     private LayerFieldItem Ground => map!.Layer(layerIndex);
@@ -227,7 +276,17 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
 
     private Task DrawItems()
     {
-        var buildings = map!.Buildings.Where(b => b.BuildingType != 0).Select(b => new[] { (int)b.X, (int)b.Y });
+        var buildings = map!.Buildings.Where(b => b.BuildingType != 0).Select(b =>
+        {
+            var (x, y, w, h) = IslandMap.Footprint(b);
+            var color = b.BuildingType switch
+            {
+                BuildingType.Bridge => ReferenceEquals(b, selectedBridge) ? "rgba(47, 169, 161, 0.9)" : "rgba(160, 110, 60, 0.9)",
+                BuildingType.Incline => "rgba(196, 154, 108, 0.9)",
+                _ => "rgba(242, 193, 78, 0.85)",
+            };
+            return new object[] { x, y, w, h, color };
+        });
         return module?.InvokeVoidAsync("setItems", map.ItemPixels(layerIndex), buildings).AsTask() ?? Task.CompletedTask;
     }
 
@@ -259,6 +318,11 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
         {
             selection = [a.X, a.Y, a.W, a.H];
         }
+        else if (mode == Mode.Bridges && selectedBridge is { } b)
+        {
+            var (bx, by, bw, bh) = IslandMap.Footprint(b);
+            selection = [bx, by, bw, bh];
+        }
         else if (mode == Mode.Look && selected is { } s)
         {
             var tile = layer.GetTile(s.RelX, s.RelY);
@@ -267,7 +331,7 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
             selection = [x, y, w, h];
         }
 
-        var tool = mode switch { Mode.Look => "look", Mode.Area => "area", _ => "paint" };
+        var tool = mode switch { Mode.Look or Mode.Bridges => "look", Mode.Area => "area", _ => "paint" };
         return module.InvokeVoidAsync("setView", viewX, viewY, across, tiles, selection, Cursor(), tool).AsTask();
     }
 
@@ -351,6 +415,9 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
                 break;
             case Mode.Place when brush is null:
                 message = L.T("Wähle oben zuerst einen Gegenstand oder etwas aus der Natur.", "First choose an item or some nature above.");
+                break;
+            case Mode.Bridges:
+                await TapBridge(x, y);
                 break;
             default:
                 var before = map!.Snapshot();
@@ -624,6 +691,8 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
         picking = Picking.None;
         if (target == Picking.Brush)
             await SetBrush(item);
+        else if (target == Picking.ReplaceAll)
+            await ReplaceAllSame(item);
         else
             await ReplaceSelected(item);
     }
@@ -634,6 +703,8 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
         picking = Picking.None;
         if (target == Picking.NatureBrush)
             await SetBrush(new Item(id));
+        else if (target == Picking.ReplaceAllNature)
+            await ReplaceAllSame(new Item(id));
         else
             await ReplaceSelected(new Item(id));
     }
@@ -666,6 +737,122 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
         await DrawView();
     }
 
+    private static int StackOf(Item item) =>
+        !item.IsFieldItem && ItemInfo.TryGetMaxStackCount(item, out var max) ? max : 1;
+
+    // stackable items keep the amount minus one in Count
+    private async Task SetAmount(int amount)
+    {
+        if (selected is not { } spot)
+            return;
+        var tile = Ground.GetTile(spot.RelX, spot.RelY);
+        Push(map!.Snapshot());
+        tile.Count = (ushort)(Math.Clamp(amount, 1, StackOf(tile)) - 1);
+        await Changed();
+        await DrawView();
+    }
+
+    // "alike" as NHSE's replace means it: the very same item, variant and amount included
+    private int SameCount(Item tile) => Ground.Tiles.Count(t => t.IsRoot && t.Equals(tile));
+
+    private async Task ReplaceAllSame(Item item)
+    {
+        message = null;
+        if (selected is not { } spot)
+            return;
+        var layer = Ground;
+        var old = new Item(layer.GetTile(spot.RelX, spot.RelY).RawValue);
+        var before = map!.Snapshot();
+        var count = layer.ReplaceAll(old, item, 0, 0, layer.TileInfo.TotalWidth, layer.TileInfo.TotalHeight);
+        if (count < 0)
+        {
+            message = L.T("Das geht nur mit etwas gleich Großem, sonst würde es mit den Nachbarn überlappen.", "That only works with something of the same size, it would overlap its neighbours otherwise.");
+            return;
+        }
+        Push(before);
+        message = L.T($"{count} mal ersetzt.", $"Replaced {count} times.");
+        await Changed();
+        await DrawView();
+    }
+
+    private async Task RemoveAllSame()
+    {
+        if (selected is not { } spot)
+            return;
+        var layer = Ground;
+        var old = new Item(layer.GetTile(spot.RelX, spot.RelY).RawValue);
+        var before = map!.Snapshot();
+        var count = EraseArea(0, 0, map.Width, map.Height, t => t.Equals(old));
+        Push(before);
+        message = L.T($"{count} mal entfernt.", $"Removed {count} times.");
+        await Changed();
+        await DrawView();
+    }
+
+    // ---- bridges ----
+
+    private async Task TapBridge(int x, int y)
+    {
+        if (map!.BuildingAt(x, y) is { } building)
+        {
+            selectedBridge = building.BuildingType == BuildingType.Bridge ? building : null;
+            if (selectedBridge is null)
+                message = L.T("Das ist ein Gebäude. Hier lassen sich nur Brücken ändern.", "That is a building. Only bridges can be changed here.");
+            await DrawItems();
+            return;
+        }
+        selectedBridge = null;
+        var error = map.PlanBridge(x, y, bridgeStyle, out var plan);
+        if (error is not null)
+        {
+            message = error;
+            await DrawItems();
+            return;
+        }
+        var before = map.Snapshot();
+        if (!map.AddBuilding(plan))
+        {
+            message = L.T("Auf der Insel ist kein Platz mehr für ein weiteres Bauwerk.", "The island has no room left for another structure.");
+            return;
+        }
+        Push(before);
+        selectedBridge = map.Buildings.First(b => b.X == plan.X && b.Y == plan.Y && b.BuildingType == BuildingType.Bridge);
+        message = L.T($"{IslandMap.BridgeStyleName(bridgeStyle)} gebaut, {IslandMap.BridgeInfo(plan).Length} Felder lang.", $"Built a {IslandMap.BridgeStyleName(bridgeStyle)}, {IslandMap.BridgeInfo(plan).Length} tiles long.");
+        await Changed();
+    }
+
+    private async Task SetBridgeStyle(string style)
+    {
+        message = null;
+        if (selectedBridge is not { } bridge)
+        {
+            bridgeStyle = style;
+            return;
+        }
+        var (_, length, diagonal) = IslandMap.BridgeInfo(bridge);
+        var name = $"Bridge{style}{(diagonal ? "Diagonal" : "")}{(diagonal ? ((BridgeType)bridge.Type).ToString()[^3..] : length.ToString("00"))}";
+        if (!Enum.TryParse<BridgeType>(name, out var type))
+        {
+            message = L.T("Diesen Stil gibt es nicht in dieser Form.", "This style does not exist in this shape.");
+            return;
+        }
+        Push(map!.Snapshot());
+        bridge.Type = (ushort)type;
+        bridgeStyle = style;
+        await Changed();
+    }
+
+    private async Task RemoveBridge()
+    {
+        if (selectedBridge is not { } bridge)
+            return;
+        Push(map!.Snapshot());
+        bridge.Clear();
+        selectedBridge = null;
+        message = L.T("Brücke abgerissen.", "Bridge removed.");
+        await Changed();
+    }
+
     private async Task RemoveSelected()
     {
         if (selected is not { } spot)
@@ -688,6 +875,8 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
     {
         mode = value;
         message = null;
+        selectedBridge = null;
+        await DrawItems();
         await DrawView();
     }
 
@@ -727,6 +916,7 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
         undo.RemoveFirst();
         map!.Restore(last.Value);
         message = null;
+        selectedBridge = null;
         await Changed();
         if (module is not null)
             await module.InvokeVoidAsync("patchTerrain", 0, 0, map.Width, map.Height, map.TerrainPixels());
