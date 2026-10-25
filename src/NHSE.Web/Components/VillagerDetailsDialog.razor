@@ -1,0 +1,190 @@
+@inject ItemCatalog Catalog
+
+@* Everything about one resident that NHSE's villager editor offers: personality, friendship, clothes and furniture. *@
+<div class="dialog-backdrop" @onclick="Close">
+    <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+        <header class="dialog-head">
+            <h3 class="with-icon"><ItemImage Src="@VillagerCatalog.Picture(Villager.InternalName)" />@VillagerCatalog.Name(Villager)</h3>
+            <button class="icon-button" aria-label="@L.T("Schließen", "Close")" @onclick="Close">&#x2715;</button>
+        </header>
+        <nav class="dialog-tabs">
+            <div class="segmented">
+                <button class="@(page == Page.General ? "active" : "")" @onclick="() => page = Page.General">@L.T("Allgemein", "General")</button>
+                <button class="@(page == Page.Friends ? "active" : "")" @onclick="() => page = Page.Friends">@L.T("Freundschaft", "Friendship")</button>
+                <button class="@(page == Page.Clothes ? "active" : "")" @onclick="() => page = Page.Clothes">@L.T("Kleidung", "Clothes")</button>
+                <button class="@(page == Page.Furniture ? "active" : "")" @onclick="() => page = Page.Furniture">@L.T("Möbel", "Furniture")</button>
+            </div>
+        </nav>
+
+        <div class="dialog-body">
+            @switch (page)
+            {
+                case Page.General:
+                    <div class="profile-fields">
+                        <label>
+                            <span>@L.T("Persönlichkeit", "Personality")</span>
+                            <select value="@((int)Villager.Personality)" @onchange="SetPersonality">
+                                @foreach (var p in Enum.GetValues<VillagerPersonality>().Where(p => p != VillagerPersonality.None))
+                                {
+                                    <option value="@((int)p)">@PersonalityName(p)</option>
+                                }
+                            </select>
+                        </label>
+                        <p class="hint">@L.T("Die Persönlichkeit bestimmt, wie der Bewohner spricht, und auch, ob er männlich oder weiblich ist.",
+                                             "The personality decides how the villager talks, and also whether they are male or female.")</p>
+                    </div>
+                    break;
+
+                case Page.Friends:
+                    @if (!memories.Any())
+                    {
+                        <p class="hint">@L.T("Dieser Bewohner kennt noch niemanden.", "This villager does not know anyone yet.")</p>
+                    }
+                    @foreach (var (memory, index) in memories)
+                    {
+                        var m = memory;
+                        <div class="friend">
+                            <div class="brush-text">
+                                <strong>@m.PlayerName</strong>
+                                <span class="hint">@L.T($"von {m.TownName}", $"from {m.TownName}")</span>
+                            </div>
+                            <label>
+                                <span>@L.T("Freundschaft", "Friendship")</span>
+                                <span class="date-pair">
+                                    <input type="number" min="0" max="255" value="@m.Friendship" @onchange="e => SetFriendship(m, e.Value)" />
+                                    <button class="small" @onclick="() => SetFriendship(m, 255)">Max</button>
+                                </span>
+                            </label>
+                            <label>
+                                <span>@L.T("Spitzname für dich", "Nickname for you")</span>
+                                <input maxlength="10" value="@m.NickName" @onchange="e => SetNickName(m, e.Value)" />
+                            </label>
+                        </div>
+                    }
+                    <p class="hint">@L.T("Freundschaft geht von 0 bis 255. Ab etwa 200 schenken Bewohner ihr Foto.", "Friendship goes from 0 to 255. From about 200 villagers give their photo.")</p>
+                    break;
+
+                case Page.Clothes:
+                    <div class="pocket-grid">
+                        @for (int i = 0; i < clothes.Count; i++)
+                        {
+                            var index = i;
+                            <ItemSlot Item="@clothes[index]" Number="@(index + 1)" OnClick="() => editing = (clothes, index)" />
+                        }
+                    </div>
+                    <p class="hint">@L.T("Was der Bewohner im Schrank hat und anziehen kann.", "What the villager has in the wardrobe and can wear.")</p>
+                    break;
+
+                default:
+                    <div class="pocket-grid">
+                        @for (int i = 0; i < furniture.Count; i++)
+                        {
+                            var index = i;
+                            <ItemSlot Item="@furniture[index]" Number="@(index + 1)" OnClick="() => editing = (furniture, index)" />
+                        }
+                    </div>
+                    <p class="hint">@L.T("Möbel, die der Bewohner besitzt, zum Beispiel Geschenke von dir.", "Furniture the villager owns, for example your gifts.")</p>
+                    break;
+            }
+        </div>
+    </div>
+</div>
+
+@if (editing is { } e)
+{
+    <ItemPickerDialog Title="@(page == Page.Clothes ? L.T("Kleidungsstück", "Clothing") : L.T("Möbelstück", "Furniture"))"
+                      Current="@e.List[e.Index]" CanClear="@(!e.List[e.Index].IsNone)"
+                      Picked="Put" Cleared="Clear" Closed="() => editing = null" />
+}
+
+@code {
+    private enum Page { General, Friends, Clothes, Furniture }
+
+    [Parameter, EditorRequired] public IVillager Villager { get; set; } = null!;
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private Page page;
+    private List<(GSaveMemory Memory, int Index)> memories = [];
+    private List<VillagerItem> clothes = [];
+    private List<VillagerItem> furniture = [];
+    private (List<VillagerItem> List, int Index)? editing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        memories = Villager.GetMemories().Select((m, i) => (m, i)).Where(p => !string.IsNullOrWhiteSpace(p.m.PlayerName)).ToList();
+        clothes = [.. Villager.WearStockList];
+        furniture = [.. Villager.FtrStockList];
+        await Catalog.EnsureLoadedAsync();
+    }
+
+    private Task Save() => Changed.InvokeAsync();
+
+    private async Task SetPersonality(ChangeEventArgs e)
+    {
+        if (!byte.TryParse(e.Value?.ToString(), out var value))
+            return;
+        Villager.Personality = (VillagerPersonality)value;
+        await Save();
+    }
+
+    private async Task SetFriendship(GSaveMemory memory, object? value)
+    {
+        if (!int.TryParse(value?.ToString(), out var friendship))
+            return;
+        memory.Friendship = (byte)Math.Clamp(friendship, 0, 255);
+        await Save();
+    }
+
+    private async Task SetNickName(GSaveMemory memory, object? value)
+    {
+        var name = (value?.ToString() ?? string.Empty).Trim();
+        if (name.Length == 0)
+            return;
+        memory.NickName = name;
+        await Save();
+    }
+
+    private async Task Put(Item item)
+    {
+        if (editing is not { } e)
+            return;
+        var stored = new VillagerItem();
+        stored.CopyFrom(item);
+        e.List[e.Index] = stored;
+        editing = null;
+        await Store(e.List);
+    }
+
+    private async Task Clear()
+    {
+        if (editing is not { } e)
+            return;
+        e.List[e.Index] = new VillagerItem { ItemId = Item.NONE };
+        editing = null;
+        await Store(e.List);
+    }
+
+    private async Task Store(List<VillagerItem> list)
+    {
+        if (ReferenceEquals(list, clothes))
+            Villager.WearStockList = clothes;
+        else
+            Villager.FtrStockList = furniture;
+        await Save();
+    }
+
+    private Task Close() => Closed.InvokeAsync();
+
+    private static string PersonalityName(VillagerPersonality p) => p switch
+    {
+        VillagerPersonality.Lazy => L.T("Faul", "Lazy"),
+        VillagerPersonality.Jock => L.T("Sportlich", "Jock"),
+        VillagerPersonality.Cranky => L.T("Mürrisch", "Cranky"),
+        VillagerPersonality.Smug => L.T("Eingebildet", "Smug"),
+        VillagerPersonality.Normal => L.T("Normal", "Normal"),
+        VillagerPersonality.Peppy => L.T("Aufgedreht", "Peppy"),
+        VillagerPersonality.Snooty => L.T("Hochnäsig", "Snooty"),
+        _ => L.T("Großschwesterlich", "Sisterly"),
+    };
+}

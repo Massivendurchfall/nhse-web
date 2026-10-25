@@ -21,11 +21,11 @@
 
   <ItemGroup>
     <Compile Include="$(NhseCore)**\*.cs"
-             Exclude="$(NhseCore)bin\**;$(NhseCore)obj\**;$(NhseCore)Encryption\AesCtr.cs;$(NhseCore)Structures\Misc\AchievementList.cs;$(NhseCore)Structures\Misc\GSavePlayerManpu.cs;$(NhseCore)Structures\Misc\GSaveVisitorNpc.cs"
+             Exclude="$(NhseCore)bin\**;$(NhseCore)obj\**;$(NhseCore)Encryption\AesCtr.cs;$(NhseCore)Structures\Misc\AchievementList.cs;$(NhseCore)Structures\Misc\GSavePlayerManpu.cs;$(NhseCore)Structures\Misc\GSaveVisitorNpc.cs;$(NhseCore)Util\StructConverter.cs"
              LinkBase="NHSE.Core" />
     <Compile Include="Crypto\AesCtr.cs" />
     <Compile Include="MemorySaveFileProvider.cs" />
-    <!-- bool arrays marshal as 4 bytes per flag on WebAssembly; these copies store the flags as bytes -->
+    <!-- WebAssembly marshalling fixes: flags stored as bytes, and the struct converter clears its buffer first -->
     <Compile Include="Patched\*.cs" />
   </ItemGroup>
 

@@ -92,7 +92,11 @@ public sealed class SaveSession(IJSRuntime js)
             Check<AchievementList>(personal.Data[personal.Offsets.CountAchievement..], personal.Achievements.ToBytes()),
             Check<GSavePlayerManpu15>(personal.Data[personal.Offsets.Manpu..], ((GSavePlayerManpu15)personal.Reactions).ToBytes()),
             Check<TurnipStonk>(Save.Main.Data[Save.Main.Offsets.ShopKabu..], Save.Main.Turnips.ToBytesClass()),
-            Check<GSaveVisitorNpc>(Save.Main.Data[Save.Main.Offsets.Visitor..], Save.Main.Visitor.ToBytesClass()));
+            Check<GSaveVisitorNpc>(Save.Main.Data[Save.Main.Offsets.Visitor..], Save.Main.Visitor.ToBytesClass()),
+            Save.Main.GetVillager(0) is Villager2 v2
+                ? Check<VillagerItem>(v2.Data[0x1094c..], VillagerItem.SetArray(v2.WearStockList)) + " " +
+                  Check<GSavePlayerId>(v2.GetMemory(0).Data, v2.GetMemory(0).PlayerId.ToBytes())
+                : "no villager");
         var timer = System.Diagnostics.Stopwatch.StartNew();
         Save.Save((uint)DateTime.Now.Ticks);
         var saveMs = timer.ElapsedMilliseconds;
@@ -117,6 +121,9 @@ public sealed class SaveSession(IJSRuntime js)
                $"hemisphere {main.Hemisphere}, flower {main.SpecialtyFlower}, airport {main.AirportThemeColor}, visitors {string.Join("/", main.Visitor.VisitorNPC)}, " +
                $"camp {main.CampsiteStatus} {main.CampsiteVillagerSpeciesID}:{main.CampsiteVillagerVariantID}, recycle {main.RecycleBin.Count(i => !i.IsNone)}, " +
                $"pockets {p.PocketCount}+{p.BagCount}, " +
+               (main.GetVillager(0) is var v0 && !VillagerCatalog.IsEmpty(v0)
+                   ? $"villager 0 {v0.Personality} friendship {v0.GetMemory(0).Friendship} nick {v0.GetMemory(0).NickName} wear {v0.WearStockList.Count(i => !i.IsNone)}: {GameInfo.Strings.GetItemName(v0.WearStockList[0])}, "
+                   : "") +
                $"storage {p.ItemChest.Count(i => !i.IsNone)} of {p.ItemChestCount}: " +
                string.Join(", ", p.ItemChest.Where(i => !i.IsNone).Take(3).Select(i => $"{GameInfo.Strings.GetItemName(i)} x{i.Count + 1}"));
     }
