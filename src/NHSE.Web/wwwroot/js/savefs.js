@@ -76,8 +76,8 @@ export async function writeFile(path, bytes) {
     await writable.close();
 }
 
-export function download(name, bytes) {
-    const blob = new Blob([bytes], { type: 'application/zip' });
+export function download(name, bytes, type = 'application/zip') {
+    const blob = new Blob([bytes], { type });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -86,4 +86,19 @@ export function download(name, bytes) {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+/** Decodes a picture file and scales it to width x height RGBA pixels (centre square crop). */
+export async function decodeImage(bytes, width, height) {
+    const bitmap = await createImageBitmap(new Blob([bytes]));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const side = Math.min(bitmap.width, bitmap.height);
+    ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, width, height);
+    bitmap.close();
+    return new Uint8Array(ctx.getImageData(0, 0, width, height).data.buffer);
 }

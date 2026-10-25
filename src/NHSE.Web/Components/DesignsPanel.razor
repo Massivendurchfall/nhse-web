@@ -1,0 +1,314 @@
+@inject SaveSession Session
+
+<section class="card">
+    <header class="card-head">
+        <h3 class="with-icon"><img src="menuicon/MyDesignPro.png" alt="" />@L.T("Designs", "Designs")</h3>
+        <div class="segmented">
+            @foreach (var k in Enum.GetValues<Kind>())
+            {
+                var item = k;
+                <button class="@(kind == item ? "active" : "")" @onclick="() => Show(item)">@KindName(item)</button>
+            }
+        </div>
+    </header>
+    <p class="hint">@Hint(kind)</p>
+    <div class="design-grid">
+        @for (int i = 0; i < previews.Count; i++)
+        {
+            var index = i;
+            var (picture, name, empty) = previews[index];
+            <button class="design @(empty ? "empty" : "")" title="@(empty ? L.T($"{name} (Platzhalter)", $"{name} (placeholder)") : name)" @onclick="() => Open(index)">
+                <img src="@picture" alt="@name" />
+                <span>@name</span>
+            </button>
+        }
+    </div>
+</section>
+
+@if (open is { } slot)
+{
+    <div class="dialog-backdrop" @onclick="() => open = null">
+        <div class="dialog design-dialog" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <header class="dialog-head">
+                <h3>@KindName(kind) @(kind == Kind.Flag ? "" : $"{slot + 1}")</h3>
+                <button class="icon-button" aria-label="@L.T("Schließen", "Close")" @onclick="() => open = null">&#x2715;</button>
+            </header>
+            <div class="dialog-body">
+                <div class="design-sheets">
+                    @foreach (var sheet in sheets)
+                    {
+                        <img src="@sheet" alt="" />
+                    }
+                </div>
+                <div class="profile-fields">
+                    <label>
+                        <span>@L.T("Name", "Name")</span>
+                        <input maxlength="20" value="@designName" @onchange="e => Rename((string?)e.Value)" />
+                    </label>
+                    <p class="hint">@L.T($"Von {author}.", $"By {author}.") @(IsDefault ? L.T("Noch der leere Platzhalter des Spiels.", "Still the game's empty placeholder.") : "")</p>
+                </div>
+                <div class="buttons">
+                    @if (kind is Kind.Normal or Kind.Flag)
+                    {
+                        <label class="button primary">
+                            @L.T("Bild hochladen", "Upload a picture")
+                            <InputFile accept="image/*" OnChange="UploadPicture" />
+                        </label>
+                    }
+                    <label class="button">
+                        @L.T($"Design-Datei laden (.{Extension})", $"Load a design file (.{Extension})")
+                        <InputFile accept="@($".{Extension}")" OnChange="UploadFile" />
+                    </label>
+                    <button @onclick="SaveFile">@L.T($"Als .{Extension} sichern", $"Save as .{Extension}")</button>
+                    <button @onclick="SavePicture">@L.T("Als Bild sichern", "Save as picture")</button>
+                </div>
+                @if (kind is Kind.Normal or Kind.Flag)
+                {
+                    <p class="hint">@L.T("Ein Bild wird auf 32 x 32 Pixel und 15 Farben gebracht, durchsichtige Stellen bleiben durchsichtig. Am besten klappen einfache Motive mit klaren Farben.",
+                                         "A picture is reduced to 32 x 32 pixels and 15 colours, see-through parts stay see-through. Simple motifs with clear colours work best.")</p>
+                }
+                @if (message is not null)
+                {
+                    <p class="hint center">@message</p>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private enum Kind { Normal, Pro, Tailor, Flag }
+
+    [Parameter, EditorRequired] public Player Player { get; set; } = null!;
+
+    private Kind kind;
+    private List<(string Picture, string Name, bool Empty)> previews = [];
+    private int? open;
+    private List<string> sheets = [];
+    private string designName = string.Empty;
+    private string author = string.Empty;
+    private string? message;
+
+    private MainSave Main => Session.Save!.Main;
+    private string Extension => kind is Kind.Pro or Kind.Tailor ? "nhpd" : "nhd";
+    private bool IsDefault => open is { } i && (kind is Kind.Pro or Kind.Tailor
+        ? Pro(i).UsageCompatibility == DesignImage.DefaultPro
+        : Normal(i).UsageCompatibility == DesignImage.DefaultNormal);
+
+    protected override void OnInitialized() => Show(Kind.Normal);
+
+    private void Show(Kind value)
+    {
+        kind = value;
+        previews = kind switch
+        {
+            Kind.Normal => Main.GetDesigns().Select(d => (DesignImage.Preview(d, 1), d.DesignName, d.UsageCompatibility == DesignImage.DefaultNormal)).ToList(),
+            Kind.Flag => [(DesignImage.Preview(Main.FlagMyDesign, 1), Main.FlagMyDesign.DesignName, false)],
+            Kind.Pro => Main.GetDesignsPRO().Select(d => (DesignImage.Preview(d, 0, 1), d.DesignName, d.UsageCompatibility == DesignImage.DefaultPro)).ToList(),
+            _ => Main.GetDesignsTailor().Select(d => (DesignImage.Preview(d, 0, 1), d.DesignName, d.UsageCompatibility == DesignImage.DefaultPro)).ToList(),
+        };
+    }
+
+    private DesignPattern Normal(int index) => kind == Kind.Flag ? Main.FlagMyDesign : Main.GetDesign(index);
+
+    private DesignPatternPRO Pro(int index) => kind == Kind.Pro ? Main.GetDesignPRO(index) : Main.GetDesignsTailor()[index];
+
+    private void Open(int index)
+    {
+        open = index;
+        message = null;
+        LoadOpen();
+    }
+
+    private void LoadOpen()
+    {
+        if (open is not { } i)
+            return;
+        if (kind is Kind.Pro or Kind.Tailor)
+        {
+            var d = Pro(i);
+            sheets = Enumerable.Range(0, DesignPatternPRO.SheetCount).Select(s => DesignImage.Preview(d, s, 1)).ToList();
+            (designName, author) = (d.DesignName, $"{d.PlayerName} ({d.TownName})");
+        }
+        else
+        {
+            var d = Normal(i);
+            sheets = [DesignImage.Preview(d, 1)];
+            (designName, author) = (d.DesignName, $"{d.PlayerName} ({d.TownName})");
+        }
+    }
+
+    private void Store(DesignPattern design)
+    {
+        if (kind == Kind.Flag)
+            Main.FlagMyDesign = design;
+        else
+            Main.SetDesign(design, open!.Value);
+        Changed();
+    }
+
+    private void Store(DesignPatternPRO design)
+    {
+        if (kind == Kind.Pro)
+        {
+            Main.SetDesignPRO(design, open!.Value);
+        }
+        else
+        {
+            var all = Main.GetDesignsTailor();
+            all[open!.Value] = design;
+            Main.SetDesignsTailor(all);
+        }
+        Changed();
+    }
+
+    private void Changed()
+    {
+        Session.MarkDirty();
+        Show(kind);
+        LoadOpen();
+    }
+
+    private void Rename(string? value)
+    {
+        value = (value ?? string.Empty).Trim();
+        if (value.Length == 0 || open is not { } i)
+            return;
+        if (kind is Kind.Pro or Kind.Tailor)
+        {
+            var d = Pro(i);
+            d.DesignName = value;
+            Store(d);
+        }
+        else
+        {
+            var d = Normal(i);
+            d.DesignName = value;
+            Store(d);
+        }
+    }
+
+    private async Task UploadPicture(InputFileChangeEventArgs e)
+    {
+        if (open is not { } i)
+            return;
+        try
+        {
+            if (e.File.Size > 20 * 1024 * 1024)
+            {
+                message = L.T("Das Bild ist größer als 20 MB.", "The picture is larger than 20 MB.");
+                return;
+            }
+            var bytes = await Read(e.File, 20 * 1024 * 1024);
+            var js = await Session.Js();
+            var rgba = await js.InvokeAsync<byte[]>("decodeImage", bytes, DesignPattern.Width, DesignPattern.Height);
+            var d = Normal(i);
+            var name = Path.GetFileNameWithoutExtension(e.File.Name);
+            DesignImage.Apply(d, rgba, name.Length > 20 ? name[..20] : name, Player.Personal);
+            Store(d);
+            message = L.T("Das Bild ist jetzt das Design.", "The picture is now the design.");
+        }
+        catch (JSException)
+        {
+            message = L.T("Das Bild ließ sich nicht öffnen. Versuch ein PNG oder JPG.", "The picture could not be opened. Try a PNG or JPG.");
+        }
+    }
+
+    // like NHSE: a design file is the raw design; it gets the current player as owner so it can be edited in the game
+    private async Task UploadFile(InputFileChangeEventArgs e)
+    {
+        if (open is not { } i)
+            return;
+        var expected = kind is Kind.Pro or Kind.Tailor ? DesignPatternPRO.SIZE : DesignPattern.SIZE;
+        if (e.File.Size != expected)
+        {
+            message = L.T($"Die Datei hat {e.File.Size} Bytes, erwartet sind {expected}.", $"The file has {e.File.Size} bytes, {expected} are expected.");
+            return;
+        }
+        var bytes = await Read(e.File, expected);
+        if (bytes.Length != expected)
+        {
+            message = L.T($"Die Datei hat {bytes.Length} Bytes, erwartet sind {expected}.", $"The file has {bytes.Length} bytes, {expected} are expected.");
+            return;
+        }
+        if (kind is Kind.Pro or Kind.Tailor)
+        {
+            var d = new DesignPatternPRO(bytes);
+            DesignImage.Own(d, Player.Personal);
+            if (d.UsageCompatibility is not (DesignImage.Pro or DesignImage.DefaultPro))
+                d.UsageCompatibility = DesignImage.Pro;
+            Store(d);
+        }
+        else
+        {
+            var d = new DesignPattern(bytes);
+            DesignImage.Own(d, Player.Personal);
+            if (d.UsageCompatibility is not (DesignImage.Plain or DesignImage.WithTransparency))
+                d.UsageCompatibility = DesignImage.Rgba(d).Where((_, n) => n % 4 == 3).Any(a => a == 0) ? DesignImage.WithTransparency : DesignImage.Plain;
+            Store(d);
+        }
+        message = L.T("Design geladen.", "Design loaded.");
+    }
+
+    private static async Task<byte[]> Read(IBrowserFile file, long max)
+    {
+        await using var stream = file.OpenReadStream(max);
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer);
+        return buffer.ToArray();
+    }
+
+    private async Task SaveFile()
+    {
+        if (open is not { } i)
+            return;
+        var data = kind is Kind.Pro or Kind.Tailor ? Pro(i).Data.ToArray() : Normal(i).Data.ToArray();
+        var js = await Session.Js();
+        await js.InvokeVoidAsync("download", $"{FileName()}.{Extension}", data, "application/octet-stream");
+    }
+
+    private async Task SavePicture()
+    {
+        if (open is not { } i)
+            return;
+        byte[] png;
+        if (kind is Kind.Pro or Kind.Tailor)
+        {
+            // the four sheets side by side
+            var d = Pro(i);
+            const int w = DesignPatternPRO.Width, h = DesignPatternPRO.Height;
+            var all = new byte[w * DesignPatternPRO.SheetCount * h * 4];
+            for (int s = 0; s < DesignPatternPRO.SheetCount; s++)
+            {
+                var sheet = DesignImage.Rgba(d, s);
+                for (int y = 0; y < h; y++)
+                    sheet.AsSpan(y * w * 4, w * 4).CopyTo(all.AsSpan(((y * w * DesignPatternPRO.SheetCount) + (s * w)) * 4));
+            }
+            png = Png.Encode(all, w * DesignPatternPRO.SheetCount, h, 8);
+        }
+        else
+        {
+            png = Png.Encode(DesignImage.Rgba(Normal(i)), DesignPattern.Width, DesignPattern.Height, 8);
+        }
+        var js = await Session.Js();
+        await js.InvokeVoidAsync("download", $"{FileName()}.png", png, "image/png");
+    }
+
+    private string FileName() => StringUtil.CleanFileName(string.IsNullOrWhiteSpace(designName) ? "Design" : designName);
+
+    private static string KindName(Kind kind) => kind switch
+    {
+        Kind.Normal => L.T("Meine Designs", "My designs"),
+        Kind.Pro => L.T("PRO-Designs", "PRO designs"),
+        Kind.Tailor => L.T("Schneiderei", "Able Sisters"),
+        _ => L.T("Inselflagge", "Island flag"),
+    };
+
+    private static string Hint(Kind kind) => kind switch
+    {
+        Kind.Normal => L.T("Die Designs aus der Design-App. Tippe auf eines, um es zu ersetzen, als Bild oder Datei zu sichern.", "The designs of the Custom Designs app. Tap one to replace it or save it as a picture or file."),
+        Kind.Pro => L.T("PRO-Designs mit Vorder- und Rückseite und Ärmeln.", "PRO designs with front, back and sleeves."),
+        Kind.Tailor => L.T("Die Designs, die bei der Schneiderei ausgestellt sind.", "The designs on display at the Able Sisters."),
+        _ => L.T("Das Motiv der Inselflagge am Rathaus.", "The motif of the island flag at Resident Services."),
+    };
+}

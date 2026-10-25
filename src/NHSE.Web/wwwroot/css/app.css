@@ -467,3 +467,19 @@ footer { margin-top: 34px; color: var(--muted); font-size: 0.85rem; line-height:
     .map-overview .hint { text-align: center; }
     .turnip-week { grid-template-columns: auto 1fr 1fr; width: 100%; }
 }
+
+/* designs */
+.design-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-top: 10px; }
+.design {
+    flex-direction: column; gap: 4px; padding: 8px 6px; border-radius: 14px; background: var(--card-2);
+    font-size: 0.72rem; font-weight: 600; line-height: 1.15;
+}
+.design img { width: 64px; height: 64px; image-rendering: pixelated; border-radius: 6px;
+    background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 8px 8px; }
+.design span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.design.empty { opacity: 0.5; }
+.design-dialog { width: min(720px, 100%); }
+.design-sheets { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 6px 0 14px; }
+.design-sheets img { width: 192px; height: 192px; image-rendering: pixelated; border-radius: 10px; border: 2px solid var(--line);
+    background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+.button.primary { background: var(--leaf); border-color: var(--leaf); color: #fff; box-shadow: 0 3px 0 var(--leaf-dark); }
