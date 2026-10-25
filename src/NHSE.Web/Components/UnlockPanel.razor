@@ -1,14 +1,19 @@
+@using System.Net.Http.Json
 @inject SaveSession Session
+@inject HttpClient Http
 
 <div class="unlock-grid">
     <section class="card unlock">
         <img src="menuicon/BookRecipe.png" alt="" />
         <h3>@L.T("Bastelanleitungen", "DIY recipes")</h3>
         <div class="progress"><span style="width: @(Percent(known, total))%"></span></div>
-        <p>@L.T($"{known} von {total} gelernt", $"{known} of {total} learned")</p>
-        <button class="primary" @onclick="LearnAll" disabled="@(known == total)">
-            @(known == total ? L.T("Alle gelernt", "All learned") : L.T("Alle lernen", "Learn all"))
-        </button>
+        <p>@L.T($"{known} von {total} gelernt, {crafted} schon gebastelt", $"{known} of {total} learned, {crafted} crafted")</p>
+        <div class="buttons tight">
+            <button class="primary" @onclick="LearnAll" disabled="@(known == total)">
+                @(known == total ? L.T("Alle gelernt", "All learned") : L.T("Alle lernen", "Learn all"))
+            </button>
+            <button @onclick="CraftAll" disabled="@(crafted >= known)">@L.T("Alle als gebastelt markieren", "Mark all as crafted")</button>
+        </div>
         <p class="hint">@L.T("Ohne die Bausätze für Brücken und den Campingplatz, die braucht die Geschichte des Spiels.",
                              "Without the bridge and campsite kits that the game's story needs.")</p>
     </section>
@@ -23,16 +28,88 @@
         </button>
         <p class="hint">@L.T("Neue Reaktionen erscheinen im Reaktionsmenü mit ZR.", "New reactions show up in the reaction menu with ZR.")</p>
     </section>
+
+    <section class="card unlock">
+        <img src="menuicon/Present.png" alt="" />
+        <h3>@L.T("Katalog", "Catalog")</h3>
+        <div class="progress"><span style="width: @(Percent(catalogKnown, catalogTotal))%"></span></div>
+        <p>@L.T($"{catalogKnown} von {catalogTotal} Gegenständen im Katalog", $"{catalogKnown} of {catalogTotal} items in the catalog")</p>
+        <div class="buttons tight">
+            <button class="primary" @onclick="() => Catalog(CatalogPart.Everything)" disabled="@(catalogKnown >= catalogTotal)">@L.T("Alles", "Everything")</button>
+            <button @onclick="() => Catalog(CatalogPart.Furniture)">@L.T("Möbel und Kleidung", "Furniture and clothing")</button>
+            <button @onclick="() => Catalog(CatalogPart.Fish)">@L.T("Fische", "Fish")</button>
+            <button @onclick="() => Catalog(CatalogPart.Bugs)">@L.T("Insekten", "Bugs")</button>
+            <button @onclick="() => Catalog(CatalogPart.Dive)">@L.T("Meerestiere", "Sea creatures")</button>
+            <button @onclick="() => Catalog(CatalogPart.Art)">@L.T("Kunst", "Art")</button>
+        </div>
+        <p class="hint">@L.T("Alles im Katalog lässt sich bei Nook Shopping nachbestellen, mit allen Farbvarianten. Fische und Insekten zählen auch für die Lexika.",
+                             "Everything in the catalog can be reordered from Nook Shopping, with all colour variants. Fish and bugs also count for the encyclopedia.")</p>
+    </section>
+
+    <section class="card unlock">
+        <img src="menuicon/PlaneTicket.png" alt="" />
+        <h3>@L.T("Nook-Meilen-Erfolge", "Nook Miles achievements")</h3>
+        <div class="progress"><span style="width: @(Percent(achieved, achievements.Count))%"></span></div>
+        <p>@L.T($"{achieved} von {achievements.Count} ganz geschafft", $"{achieved} of {achievements.Count} fully done")</p>
+        <button class="primary" @onclick="AchieveAll" disabled="@(achieved >= achievements.Count)">@L.T("Alle erreichen", "Achieve all")</button>
+        <p class="hint">@L.T("Setzt den Zähler jeweils auf das höchste Ziel und markiert alle Stufen als erreicht.",
+                             "Sets each counter to its highest goal and marks every tier as reached.")</p>
+    </section>
 </div>
 
+<details class="card achievements">
+    <summary>@L.T("Erfolge einzeln ansehen", "Show achievements one by one")</summary>
+    <p class="hint">@L.T("Die Titel gibt es nur auf Englisch.", "Titles come in English only.")</p>
+    <div class="achievement-list">
+        @foreach (var a in achievements)
+        {
+            var row = a;
+            <div class="achievement @(row.Done ? "done" : "")">
+                <div class="brush-text">
+                    <strong>@row.Title</strong>
+                    <span class="hint">@L.T($"Stufe {row.Tiers} von {row.TierCount}, Zähler {row.Count:N0}", $"Tier {row.Tiers} of {row.TierCount}, count {row.Count:N0}")</span>
+                </div>
+                <button class="small" @onclick="() => AchieveOne(row.Index)" disabled="@row.Done">@L.T("Erreichen", "Achieve")</button>
+            </div>
+        }
+    </div>
+</details>
+
 @code {
+    private enum CatalogPart { Everything, Furniture, Fish, Bugs, Dive, Art }
+    private sealed record Achievement(int Index, string Title, int TierCount, int Tiers, uint Count, bool Done);
+
     [Parameter, EditorRequired] public Player Player { get; set; } = null!;
+
+    private static Dictionary<string, string>? titles;
 
     private int known;
     private int total;
+    private int crafted;
     private int reactions;
+    private int catalogKnown;
+    private int catalogTotal;
+    private int achieved;
+    private List<Achievement> achievements = [];
 
-    protected override void OnParametersSet() => Count();
+    private Personal Personal => Player.Personal;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Count();
+        if (titles is null)
+        {
+            try
+            {
+                titles = await Http.GetFromJsonAsync<Dictionary<string, string>>("data/achievements.json") ?? [];
+            }
+            catch (HttpRequestException)
+            {
+                titles = [];
+            }
+            Count();
+        }
+    }
 
     // same rule as NHSE's AddMissingReactions: every defined reaction except None and the unused ones
     private static readonly int AllReactionCount = Enum.GetValues<Reaction>()
@@ -42,30 +119,148 @@
 
     private void Count()
     {
-        var book = Player.Personal.GetRecipeBook();
+        var book = Personal.GetRecipeBook();
         var learnable = RecipeList.Recipes.Keys
             .Where(k => k is not (RecipeList.BridgeConstructionKit or RecipeList.CampsiteConstructionKit))
             .ToList();
         total = learnable.Count;
         known = learnable.Count(k => book.GetIsKnown(k));
-        reactions = Player.Personal.Reactions.ManpuBit.Count(r => r != 0);
+        crafted = learnable.Count(k => book.GetIsKnown(k) && book.GetIsMade(k));
+        reactions = Personal.Reactions.ManpuBit.Count(r => r != 0);
+        CountCatalog();
+        CountAchievements();
     }
 
     private void LearnAll()
     {
-        var book = Player.Personal.GetRecipeBook();
+        var book = Personal.GetRecipeBook();
         book.GiveAll(RecipeList.Recipes);
-        Player.Personal.SetRecipeBook(book);
-        Session.MarkDirty();
-        Count();
+        Personal.SetRecipeBook(book);
+        Changed();
+    }
+
+    private void CraftAll()
+    {
+        var book = Personal.GetRecipeBook();
+        book.CraftAll();
+        Personal.SetRecipeBook(book);
+        Changed();
     }
 
     private void AllReactions()
     {
-        var store = Player.Personal.Reactions;
+        var store = Personal.Reactions;
         store.AddMissingReactions();
-        Player.Personal.Reactions = store;
+        Personal.Reactions = store;
+        Changed();
+    }
+
+    private void Changed()
+    {
         Session.MarkDirty();
         Count();
     }
+
+    // ---- catalog: one "collected" bit per item, plus one per colour variant (same as NHSE's ItemReceivedEditor) ----
+
+    private static IEnumerable<ushort> CatalogItems()
+    {
+        var names = GameInfo.Strings.itemlist;
+        var skip = GameLists.NoCheckReceived.ToArray().ToHashSet();
+        for (ushort i = 1; i < names.Length; i++)
+        {
+            if (!string.IsNullOrEmpty(names[i]) && !skip.Contains(i))
+                yield return i;
+        }
+    }
+
+    private void CountCatalog()
+    {
+        var data = Personal.Data;
+        var offset = Personal.Offsets.ItemCollectBit;
+        catalogTotal = 0;
+        catalogKnown = 0;
+        foreach (var id in CatalogItems())
+        {
+            catalogTotal++;
+            if (FlagUtil.GetFlag(data, offset, id))
+                catalogKnown++;
+        }
+    }
+
+    private void Catalog(CatalogPart part)
+    {
+        IEnumerable<ushort> ids = part switch
+        {
+            CatalogPart.Fish => GameLists.Fish.ToArray(),
+            CatalogPart.Bugs => GameLists.Bugs.ToArray(),
+            CatalogPart.Dive => GameLists.Dive.ToArray(),
+            CatalogPart.Art => GameLists.Art.ToArray(),
+            CatalogPart.Furniture => CatalogItems().Except(GameLists.Fish.ToArray().Concat(GameLists.Bugs.ToArray())
+                .Concat(GameLists.Dive.ToArray()).Concat(GameLists.Art.ToArray())),
+            _ => CatalogItems(),
+        };
+        foreach (var id in ids.ToList())
+            Collect(id);
+        Changed();
+    }
+
+    private void Collect(ushort id)
+    {
+        var data = Personal.Data;
+        FlagUtil.SetFlag(data, Personal.Offsets.ItemCollectBit, id, true);
+        var remake = ItemRemakeUtil.GetRemakeIndex(id);
+        if (!ItemRemakeInfoData.List.TryGetValue(remake, out var info))
+            return;
+        for (int variant = 0; variant < ItemRemakeInfo.BodyColorCountMax; variant++)
+        {
+            if (info.HasBodyColor(variant))
+                FlagUtil.SetFlag(data, Personal.Offsets.ItemRemakeCollectBit, (remake * ItemRemakeInfo.BodyColorCountMax) + variant, true);
+        }
+    }
+
+    // ---- Nook Miles achievements ----
+
+    private void CountAchievements()
+    {
+        var list = Personal.Achievements;
+        achievements = LifeSupportAchievement.List.Values
+            .Select(def =>
+            {
+                // a tier counts when the counter reached it or the game already marked it
+                var tiers = 0;
+                for (int i = 0; i < def.AchievementCount; i++)
+                {
+                    if (list.Read[def.Index][i] || def.GetIsSatisfied(i, list.Counts[def.Index]))
+                        tiers++;
+                }
+                return new Achievement(def.Index, Title(def.Name), def.AchievementCount, tiers, list.Counts[def.Index], tiers >= def.AchievementCount);
+            })
+            .OrderBy(a => a.Done)
+            .ThenBy(a => a.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        achieved = achievements.Count(a => a.Done);
+    }
+
+    private static string Title(string internalName) =>
+        titles?.GetValueOrDefault(internalName) ?? Words.Replace(internalName, " $1").Trim();
+
+    private void AchieveAll()
+    {
+        var list = Personal.Achievements;
+        list.GiveAll(DateTime.Now);
+        Personal.Achievements = list;
+        Changed();
+    }
+
+    private void AchieveOne(int index)
+    {
+        var list = Personal.Achievements;
+        list.GiveAll(index, DateTime.Now);
+        Personal.Achievements = list;
+        Changed();
+    }
+
+    // "CatchFish" -> "Catch Fish" when the data has no title (the regex source generator does not run on Razor code)
+    private static readonly System.Text.RegularExpressions.Regex Words = new("(?<=[a-z])([A-Z])");
 }

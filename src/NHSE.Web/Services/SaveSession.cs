@@ -84,6 +84,15 @@ public sealed class SaveSession(IJSRuntime js)
     {
         if (Save is null || Provider is null)
             return "no save";
+        // structures NHSE copies with the runtime marshaller: same size and an unchanged round trip?
+        var personal = Save.Players[0].Personal;
+        string Check<T>(ReadOnlySpan<byte> raw, byte[] written) =>
+            $"{typeof(T).Name} {System.Runtime.InteropServices.Marshal.SizeOf<T>()}/{written.Length}/{(raw[..Math.Min(raw.Length, written.Length)].SequenceEqual(written) ? "same" : "DIFF")}";
+        var marshal = string.Join(", ",
+            Check<AchievementList>(personal.Data[personal.Offsets.CountAchievement..], personal.Achievements.ToBytes()),
+            Check<GSavePlayerManpu15>(personal.Data[personal.Offsets.Manpu..], ((GSavePlayerManpu15)personal.Reactions).ToBytes()),
+            Check<TurnipStonk>(Save.Main.Data[Save.Main.Offsets.ShopKabu..], Save.Main.Turnips.ToBytesClass()),
+            Check<GSaveVisitorNpc>(Save.Main.Data[Save.Main.Offsets.Visitor..], Save.Main.Visitor.ToBytesClass()));
         var timer = System.Diagnostics.Stopwatch.StartNew();
         Save.Save((uint)DateTime.Now.Ticks);
         var saveMs = timer.ElapsedMilliseconds;
@@ -96,13 +105,18 @@ public sealed class SaveSession(IJSRuntime js)
             .Select(v => v.InternalName + (v.MovingOut ? " (out)" : ""));
         var houses = main.GetVillagerHouses().Count(h => h.NPC1 >= 0);
         var weeds = main.GetFieldItemLayer0().Count(t => FieldItemList.Items.TryGetValue(t.DisplayItemId, out var d) && d.Kind.IsWeed);
-        return $"self test: save {saveMs} ms, reload {timer.ElapsedMilliseconds} ms, invalid hashes {reloaded.GetInvalidHashes().Count()}, " +
+        return $"self test: marshal [{marshal}], save {saveMs} ms, reload {timer.ElapsedMilliseconds} ms, invalid hashes {reloaded.GetInvalidHashes().Count()}, " +
                $"wallet {p.Wallet.Value}, bank {p.Bank.Value}, slot 16 {GameInfo.Strings.GetItemName(p.Pocket[15])}, " +
                $"recipes {RecipeList.Recipes.Keys.Count(k => book.GetIsKnown(k))}, reactions {p.Reactions.ManpuBit.Count(r => r != 0)}, " +
                $"villagers {string.Join(" ", villagers)}, houses {houses}, turnips buy {main.Turnips.BuyPrice} mon am {main.Turnips.SellMondayAM}, " +
                $"museum {main.Museum.GetItems().Count(i => !i.IsNone)}, weeds {weeds}, " +
                $"ground roots {main.GetFieldItemLayer0().Count(t => t.IsRoot)} (furniture {main.GetFieldItemLayer0().Count(t => t.IsRoot && t.ItemId < Item.FieldItemMin)}), " +
                $"path tiles {main.GetTerrainTiles().Count(t => t.UnitModelRoad.IsRoad)}, " +
+               $"catalog {Enumerable.Range(1, GameInfo.Strings.itemlist.Length - 1).Count(i => FlagUtil.GetFlag(p.Data, p.Offsets.ItemCollectBit, i))}, " +
+               $"achievement counts {p.Achievements.Counts.Count(c => c > 0)}, birthday {p.Birthday}, fruit {p.ProfileFruit}/{main.SpecialtyFruit}, " +
+               $"hemisphere {main.Hemisphere}, flower {main.SpecialtyFlower}, airport {main.AirportThemeColor}, visitors {string.Join("/", main.Visitor.VisitorNPC)}, " +
+               $"camp {main.CampsiteStatus} {main.CampsiteVillagerSpeciesID}:{main.CampsiteVillagerVariantID}, recycle {main.RecycleBin.Count(i => !i.IsNone)}, " +
+               $"pockets {p.PocketCount}+{p.BagCount}, " +
                $"storage {p.ItemChest.Count(i => !i.IsNone)} of {p.ItemChestCount}: " +
                string.Join(", ", p.ItemChest.Where(i => !i.IsNone).Take(3).Select(i => $"{GameInfo.Strings.GetItemName(i)} x{i.Count + 1}"));
     }

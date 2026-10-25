@@ -133,6 +133,7 @@
         <div class="map-overview">
             <canvas @ref="overview"></canvas>
             <p class="hint">@L.T("Tippe auf die Übersicht, um dorthin zu springen.", "Tap the overview to jump there.")</p>
+            <button class="small" @onclick="ExportMap">&#x2B07; @L.T("Karte als Bild speichern", "Save the map as a picture")</button>
         </div>
         <div class="map-detail">
             <canvas @ref="detail"></canvas>
@@ -740,6 +741,12 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
     }
 
     private string Picture(Item item) => FieldItems.Picture(item, Catalog);
+
+    private async Task ExportMap()
+    {
+        if (module is not null)
+            await module.InvokeVoidAsync("exportMap", $"Karte-{StringUtil.CleanFileName(Session.TownName)}.png");
+    }
 
     private string Position(Spot spot)
     {

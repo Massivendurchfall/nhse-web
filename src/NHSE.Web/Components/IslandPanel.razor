@@ -47,6 +47,9 @@
     </section>
 </div>
 
+<MuseumDetails Changed="CountMuseum" />
+<IslandBasics />
+
 <section class="card">
     <header class="card-head">
         <h3 class="with-icon"><img src="menuicon/Kabu.png" alt="" />@L.T("Rübenpreise dieser Woche", "Turnip prices this week")</h3>
@@ -73,6 +76,9 @@
     <p class="hint">@L.T("Die Preise gelten bis zum nächsten Sonntag, dann würfelt das Spiel neue aus. Im Spiel sind höchstens 660 Sterni möglich.",
                          "The prices last until next Sunday, then the game rolls new ones. The game itself never goes above 660 Bells.")</p>
 </section>
+
+<IslandVisitors />
+<RecycleBin />
 
 @code {
     private record Day(string De, string En,

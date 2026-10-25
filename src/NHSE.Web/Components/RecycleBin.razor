@@ -1,0 +1,57 @@
+@inject SaveSession Session
+@inject ItemCatalog Catalog
+
+<section class="card">
+    <header class="card-head">
+        <h3 class="with-icon"><img src="menuicon/Cardboard.png" alt="" />@L.T("Recycling-Box im Rathaus", "Recycle box at Resident Services")</h3>
+        <span class="pill">@L.T($"{slots.Count(s => !s.IsNone)} von {slots.Count} belegt", $"{slots.Count(s => !s.IsNone)} of {slots.Count} used")</span>
+    </header>
+    <div class="pocket-grid">
+        @for (int i = 0; i < slots.Count; i++)
+        {
+            var index = i;
+            <ItemSlot Item="@slots[index]" Number="@(index + 1)" OnClick="() => editing = index" />
+        }
+    </div>
+    <p class="hint">@L.T("Was hier liegt, finden alle in der Box neben dem Eingang.", "Whatever lies here, everyone finds in the box next to the entrance.")</p>
+</section>
+
+@if (editing >= 0)
+{
+    <ItemPickerDialog Title="@L.T($"Box, Feld {editing + 1}", $"Box, slot {editing + 1}")"
+                      Current="@slots[editing]" CanClear="@(!slots[editing].IsNone)"
+                      Picked="Put" Cleared="Clear" Closed="() => editing = -1" />
+}
+
+@code {
+    private List<Item> slots = [];
+    private int editing = -1;
+
+    private MainSave Main => Session.Save!.Main;
+
+    protected override async Task OnInitializedAsync()
+    {
+        slots = Main.RecycleBin.Select(i => new Item(i.RawValue)).ToList();
+        await Catalog.EnsureLoadedAsync();
+    }
+
+    private void Store()
+    {
+        Main.RecycleBin = slots.ToArray();
+        Session.MarkDirty();
+    }
+
+    private void Put(Item item)
+    {
+        slots[editing] = item;
+        editing = -1;
+        Store();
+    }
+
+    private void Clear()
+    {
+        slots[editing] = new Item(Item.NONE);
+        editing = -1;
+        Store();
+    }
+}

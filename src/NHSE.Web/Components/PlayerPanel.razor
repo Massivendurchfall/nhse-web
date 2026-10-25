@@ -34,6 +34,40 @@
         <MoneyField Label="@L.T("Meilen insgesamt", "Nook Miles in total")" Icon="menuicon/BellExchangeTicket.png"
                     Value="@Personal.TotalNookMiles.Value" Max="99999999" Steps="@(new uint[] { 100000 })"
                     ValueChanged="v => Set(v, (p, x) => p.TotalNookMiles = p.TotalNookMiles with { Value = x })" />
+        @if (Personal.Data30 is { IsInitialized30: true } extra)
+        {
+            <MoneyField Label="@L.T("Hotel-Tickets", "Hotel tickets")" Icon="menuicon/RollanTicket.png"
+                        Value="@extra.HotelTickets.Value" Max="99999" Steps="@(new uint[] { 100 })"
+                        ValueChanged="v => { extra.HotelTickets = extra.HotelTickets with { Value = v }; Session.MarkDirty(); }" />
+        }
+        @if (Player.WhereAreN is { } where)
+        {
+            <MoneyField Label="Poki" Icon="menuicon/Coin.png"
+                        Value="@where.Poki.Value" Max="99999" Steps="@(new uint[] { 1000 })"
+                        ValueChanged="v => { where.Poki = where.Poki with { Value = v }; Session.MarkDirty(); }" />
+        }
+    </div>
+</section>
+
+<section class="card">
+    <header class="card-head"><h3>@L.T("Profil", "Profile")</h3></header>
+    <div class="profile-fields">
+        <label>
+            <span>@L.T("Geburtstag (Tag und Monat)", "Birthday (day and month)")</span>
+            <span class="date-pair">
+                <input type="number" min="1" max="31" value="@birthday.Day" @onchange="e => SetBirthday(e.Value, null)" />
+                <input type="number" min="1" max="12" value="@birthday.Month" @onchange="e => SetBirthday(null, e.Value)" />
+            </span>
+        </label>
+        <label>
+            <span>@L.T("Inselfrucht im Pass", "Native fruit in the passport")</span>
+            <select value="@Personal.ProfileFruit" @onchange="SetFruit">
+                @foreach (var fruit in GameLists.Fruits.ToArray())
+                {
+                    <option value="@fruit">@GameInfo.Strings.itemlist[fruit]</option>
+                }
+            </select>
+        </label>
     </div>
 </section>
 
@@ -56,6 +90,29 @@
             var jpeg = Personal.GetPhotoData();
             photo = jpeg.Length > 0 ? "data:image/jpeg;base64," + Convert.ToBase64String(jpeg) : null;
         }
+    }
+
+    private GSaveDateMD birthday => Personal.Birthday;
+
+    // like NHSE's misc player editor: the passport shows the same date
+    private void SetBirthday(object? day, object? month)
+    {
+        var date = Personal.Birthday;
+        if (byte.TryParse(day?.ToString(), out var d) && d is >= 1 and <= 31)
+            date.Day = d;
+        if (byte.TryParse(month?.ToString(), out var m) && m is >= 1 and <= 12)
+            date.Month = m;
+        Personal.Birthday = date;
+        Personal.ProfileBirthday = date;
+        Session.MarkDirty();
+    }
+
+    private void SetFruit(ChangeEventArgs e)
+    {
+        if (!ushort.TryParse(e.Value?.ToString(), out var fruit))
+            return;
+        Personal.ProfileFruit = fruit;
+        Session.MarkDirty();
     }
 
     private void Set(uint value, Action<Personal, uint> apply)

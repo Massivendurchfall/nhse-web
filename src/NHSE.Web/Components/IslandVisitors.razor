@@ -1,0 +1,132 @@
+@inject SaveSession Session
+
+<section class="card">
+    <header class="card-head"><h3 class="with-icon"><img src="menuicon/Tent.png" alt="" />@L.T("Besucher und Campingplatz", "Visitors and campsite")</h3></header>
+
+    <h4>@L.T("Wer diese Woche auf den Platz kommt", "Who visits the plaza this week")</h4>
+    <div class="visitor-week">
+        @for (int i = 0; i < 7; i++)
+        {
+            var day = i;
+            <label>
+                <span>@DayName(day)</span>
+                <select value="@((int)visitor.VisitorNPC[day])" @onchange="e => SetVisitor(day, e.Value)">
+                    @foreach (var npc in Enum.GetValues<VisitorNPC>())
+                    {
+                        <option value="@((int)npc)">@NpcName(npc)</option>
+                    }
+                </select>
+            </label>
+        }
+    </div>
+    <p class="hint">@L.T("Gilt bis zum Ende der Woche, danach plant das Spiel selbst neu.", "Lasts until the end of the week, then the game plans by itself again.")</p>
+
+    <h4>@L.T("Campingplatz", "Campsite")</h4>
+    @if (Main.CampsiteStatus < 2)
+    {
+        <p class="hint">@L.T("Der Campingplatz ist auf dieser Insel noch nicht gebaut.", "The campsite has not been built on this island yet.")</p>
+    }
+    else
+    {
+        <div class="camp">
+            @if (Main.CampsiteStatus == 3 && Camper is { } camper)
+            {
+                <ItemImage Src="@VillagerCatalog.Picture(camper)" Alt="@GameInfo.Strings.GetVillager(camper)" />
+                <div class="brush-text">
+                    <strong>@GameInfo.Strings.GetVillager(camper)</strong>
+                    <span class="hint">@L.T("zeltet gerade auf der Insel", "is camping on the island")</span>
+                </div>
+                <button class="small" @onclick="() => picking = true">@L.T("Anderer Gast", "Other guest")</button>
+                <button class="small danger" @onclick="Empty">@L.T("Platz leeren", "Empty the site")</button>
+            }
+            else
+            {
+                <span class="plus">+</span>
+                <div class="brush-text">
+                    <strong>@L.T("Niemand zeltet", "Nobody is camping")</strong>
+                    <span class="hint">@L.T("Such dir einen Gast aus, er kommt mit dem nächsten Laden.", "Pick a guest, they arrive the next time the game loads.")</span>
+                </div>
+                <button class="small primary" @onclick="() => picking = true">@L.T("Gast einladen", "Invite a guest")</button>
+            }
+        </div>
+    }
+</section>
+
+@if (picking)
+{
+    <VillagerPickerDialog Title="@L.T("Wer soll zelten?", "Who should go camping?")" Taken="@Residents"
+                          Picked="Invite" Closed="() => picking = false" />
+}
+
+@code {
+    private GSaveVisitorNpc visitor = null!;
+    private bool picking;
+
+    private MainSave Main => Session.Save!.Main;
+
+    private string? Camper => Main.CampsiteVillagerSpeciesID < (byte)VillagerSpecies.non
+        ? VillagerUtil.GetInternalVillagerName((VillagerSpecies)Main.CampsiteVillagerSpeciesID, Main.CampsiteVillagerVariantID)
+        : null;
+
+    private IReadOnlySet<string> Residents => Main.GetVillagers().Where(v => !VillagerCatalog.IsEmpty(v)).Select(v => v.InternalName).ToHashSet();
+
+    protected override void OnInitialized() => visitor = Main.Visitor;
+
+    private void SetVisitor(int day, object? value)
+    {
+        if (!int.TryParse(value?.ToString(), out var npc))
+            return;
+        visitor.VisitorNPC[day] = (VisitorNPC)npc;
+        Main.Visitor = visitor;
+        visitor = Main.Visitor;
+        Session.MarkDirty();
+    }
+
+    // same values NHSE's campsite editor writes
+    private void Invite(string id)
+    {
+        picking = false;
+        Main.CampsiteStatus = 3;
+        Main.CampsiteVillagerSpeciesID = (byte)Enum.Parse<VillagerSpecies>(id[..3]);
+        Main.CampsiteVillagerVariantID = byte.Parse(id[3..]);
+        Main.CampTimestamp = DateTime.Now;
+        Session.MarkDirty();
+    }
+
+    private void Empty()
+    {
+        Main.CampsiteStatus = 2;
+        Main.CampsiteVillagerVariantID = 0;
+        Main.CampsiteVillagerSpeciesID = (byte)VillagerSpecies.non;
+        Session.MarkDirty();
+    }
+
+    // the week starts on Sunday, like the turnip prices
+    private static string DayName(int day) => day switch
+    {
+        0 => L.T("Sonntag", "Sunday"),
+        1 => L.T("Montag", "Monday"),
+        2 => L.T("Dienstag", "Tuesday"),
+        3 => L.T("Mittwoch", "Wednesday"),
+        4 => L.T("Donnerstag", "Thursday"),
+        5 => L.T("Freitag", "Friday"),
+        _ => L.T("Samstag", "Saturday"),
+    };
+
+    private static string NpcName(VisitorNPC npc) => npc switch
+    {
+        VisitorNPC.None => L.T("Niemand", "Nobody"),
+        VisitorNPC.Gulliver => "Gulliver",
+        VisitorNPC.Label => "Label",
+        VisitorNPC.Saharah => "Saharah",
+        VisitorNPC.Wisp => "Wisp",
+        VisitorNPC.Mabel => "Mabel",
+        VisitorNPC.CJ => "C.J.",
+        VisitorNPC.Flick => "Flick",
+        VisitorNPC.Kicks => "Kicks",
+        VisitorNPC.Leif => L.T("Gerd", "Leif"),
+        VisitorNPC.Redd => L.T("Reiner", "Redd"),
+        VisitorNPC.Gullivarrr => L.T("Gulliver (Pirat)", "Gullivarrr"),
+        _ => npc.ToString(),
+    };
+}

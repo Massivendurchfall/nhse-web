@@ -1,0 +1,108 @@
+@inject SaveSession Session
+
+<section class="card">
+    <header class="card-head"><h3 class="with-icon"><img src="menuicon/PltPalm.png" alt="" />@L.T("Inselgrundlagen", "Island basics")</h3></header>
+    <div class="profile-fields">
+        <label>
+            <span>@L.T("Erdhalbkugel", "Hemisphere")</span>
+            <select value="@((int)Main.Hemisphere)" @onchange="e => Set(e, v => Main.Hemisphere = (Hemisphere)v)">
+                <option value="0">@L.T("Nördlich", "Northern")</option>
+                <option value="1">@L.T("Südlich", "Southern")</option>
+            </select>
+        </label>
+        <label>
+            <span>@L.T("Inselfrucht", "Native fruit")</span>
+            <select value="@Main.SpecialtyFruit" @onchange="SetIslandFruit">
+                @foreach (var fruit in Fruits)
+                {
+                    <option value="@fruit">@GameInfo.Strings.itemlist[fruit]</option>
+                }
+            </select>
+        </label>
+        <label>
+            <span>@L.T("Frucht der Partnerinsel", "Sister island fruit")</span>
+            <select value="@Main.SisterFruit" @onchange="e => Set(e, v => Main.SisterFruit = (ushort)v)">
+                @foreach (var fruit in Fruits)
+                {
+                    <option value="@fruit">@GameInfo.Strings.itemlist[fruit]</option>
+                }
+            </select>
+        </label>
+        <label>
+            <span>@L.T("Inselblume", "Native flower")</span>
+            <select value="@((int)Main.SpecialtyFlower)" @onchange="e => Set(e, v => Main.SpecialtyFlower = (IslandFlowers)v)">
+                @foreach (var flower in Enum.GetValues<IslandFlowers>())
+                {
+                    <option value="@((int)flower)">@FlowerName(flower)</option>
+                }
+            </select>
+        </label>
+        <label>
+            <span>@L.T("Blume der Partnerinsel", "Sister island flower")</span>
+            <select value="@((int)Main.SisterFlower)" @onchange="e => Set(e, v => Main.SisterFlower = (IslandFlowers)v)">
+                @foreach (var flower in Enum.GetValues<IslandFlowers>())
+                {
+                    <option value="@((int)flower)">@FlowerName(flower)</option>
+                }
+            </select>
+        </label>
+        <label>
+            <span>@L.T("Farbe des Flughafens", "Airport colour")</span>
+            <select value="@((int)Main.AirportThemeColor)" @onchange="e => Set(e, v => Main.AirportThemeColor = (AirportColor)v)">
+                <option value="0">@L.T("Blau", "Blue")</option>
+                <option value="1">@L.T("Gelb", "Yellow")</option>
+                <option value="2">@L.T("Orange", "Orange")</option>
+                <option value="3">@L.T("Grün", "Green")</option>
+            </select>
+        </label>
+        <p class="hint">@L.T("Ein Wechsel der Halbkugel verschiebt die Jahreszeiten. Die Inselfrucht steht danach auch in den Pässen.",
+                             "Changing the hemisphere shifts the seasons. The native fruit also shows in the passports afterwards.")</p>
+    </div>
+</section>
+
+@code {
+    private static readonly ushort[] Fruits = GameLists.Fruits.ToArray();
+
+    private MainSave Main => Session.Save!.Main;
+
+    private void Set(ChangeEventArgs e, Action<int> apply)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var value))
+            return;
+        apply(value);
+        Session.MarkDirty();
+    }
+
+    // Same as NHSE's fruit and flower editor: the fruit flags follow the native fruit, and the passports show it.
+    private void SetIslandFruit(ChangeEventArgs e)
+    {
+        if (!ushort.TryParse(e.Value?.ToString(), out var fruit))
+            return;
+        Main.SpecialtyFruit = fruit;
+        var flags = new byte[5];
+        switch (fruit)
+        {
+            case 2213: flags[0] = 1; break; // apple
+            case 2214: flags[1] = 1; break; // orange
+            case 2285: flags[2] = 1; break; // pear
+            case 2286: flags[3] = 1; break; // peach
+            case 2287: flags[4] = 1; break; // cherry
+        }
+        Main.FruitFlags = flags;
+        foreach (var player in Session.Save!.Players)
+            player.Personal.ProfileFruit = fruit;
+        Session.MarkDirty();
+    }
+
+    private static string FlowerName(IslandFlowers flower) => flower switch
+    {
+        IslandFlowers.Windflower => L.T("Anemone", "Windflower"),
+        IslandFlowers.Hyacinth => L.T("Hyazinthe", "Hyacinth"),
+        IslandFlowers.Tulip => L.T("Tulpe", "Tulip"),
+        IslandFlowers.Rose => L.T("Rose", "Rose"),
+        IslandFlowers.Cosmos => L.T("Kosmee", "Cosmos"),
+        IslandFlowers.Lily => L.T("Lilie", "Lily"),
+        IslandFlowers.Mums => L.T("Chrysantheme", "Mum"),
+        _ => L.T("Stiefmütterchen", "Pansy"),
+    };
+}

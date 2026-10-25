@@ -17,8 +17,11 @@
     </div>
     @if (unlocked < slots.Count)
     {
-        <p class="hint">@L.T("Graue Felder schaltest du im Spiel mit einer Taschenerweiterung frei.",
-                             "Grey slots unlock in the game with a pocket upgrade.")</p>
+        <div class="buttons">
+            <span class="hint">@L.T("Graue Felder schaltest du im Spiel mit einer Taschenerweiterung frei, oder gleich hier.",
+                                   "Grey slots unlock in the game with a pocket upgrade, or right here.")</span>
+            <button class="small" @onclick="Expand">@L.T($"Auf {slots.Count} Plätze erweitern", $"Expand to {slots.Count} slots")</button>
+        </div>
     }
 </section>
 
@@ -63,6 +66,16 @@
         var p = Player.Personal;
         p.Pocket = slots.Take(20).ToArray();
         p.Bag = slots.Skip(20).Take(20).ToArray();
+        Session.MarkDirty();
+    }
+
+    // both pocket upgrades at once: 20 slots in Pocket and 20 in Bag
+    private void Expand()
+    {
+        var p = Player.Personal;
+        p.PocketCount = 20;
+        p.BagCount = 20;
+        unlocked = (int)Math.Min(slots.Count, p.PocketCount + p.BagCount);
         Session.MarkDirty();
     }
 

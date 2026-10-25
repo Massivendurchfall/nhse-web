@@ -311,6 +311,12 @@ input:focus { outline: none; border-color: var(--sea); }
 .unlock { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .unlock img { width: 56px; height: 56px; }
 .unlock p { margin: 0; }
+.buttons.tight { margin: 0; gap: 8px; }
+.buttons.tight button { padding: 7px 14px; }
+.achievements summary { cursor: pointer; font-weight: 800; color: var(--sea); }
+.achievement-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; margin-top: 10px; }
+.achievement { display: flex; align-items: center; gap: 10px; background: var(--card-2); border-radius: 14px; padding: 8px 10px 8px 14px; }
+.achievement.done { opacity: 0.6; }
 .progress { width: 100%; height: 12px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
 .progress span { display: block; height: 100%; background: linear-gradient(90deg, var(--leaf), var(--sea)); border-radius: 999px; }
 
@@ -356,6 +362,27 @@ input:focus { outline: none; border-color: var(--sea); }
 .map-detail canvas { aspect-ratio: 1; }
 .map-overview .hint { margin: 6px 2px 0; }
 .map-nav { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
+
+/* island details */
+.card h4 { margin: 14px 0 8px; font-size: 1rem; }
+.visitor-week { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.visitor-week label, .profile-fields label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; }
+select {
+    font: inherit; color: var(--ink); background: var(--card-2);
+    border: 2px solid var(--line); border-radius: 14px; padding: 8px 10px; min-width: 0;
+}
+select:focus { outline: none; border-color: var(--sea); }
+.camp { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; background: var(--card-2); border-radius: 18px; padding: 10px 14px; }
+.camp img { width: 64px; height: 64px; object-fit: contain; }
+.camp .plus { width: 64px; text-align: center; font-size: 1.6rem; color: var(--muted); }
+.date-pair { display: flex; gap: 8px; }
+.date-pair input { width: 80px; }
+.museum-details summary { cursor: pointer; font-weight: 800; color: var(--sea); }
+.categories.inline { padding: 12px 0 10px; }
+.museum-tiles { padding: 4px 0 8px; max-height: 520px; }
+.museum-tiles .tile { opacity: 0.55; }
+.museum-tiles .tile.selected { opacity: 1; }
+.museum-tiles .tile small { color: var(--muted); font-size: 0.7rem; }
 
 /* residents */
 .villager-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin: 12px 0 4px; }

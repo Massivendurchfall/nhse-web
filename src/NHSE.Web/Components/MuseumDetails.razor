@@ -1,0 +1,123 @@
+@inject SaveSession Session
+@inject ItemCatalog Catalog
+
+@* Every museum piece as a picture: tap to donate or to take a donation back. *@
+<details class="card museum-details" @ontoggle="Opened">
+    <summary>@L.T("Museum einzeln bearbeiten", "Edit the museum piece by piece")</summary>
+    @if (open)
+    {
+        <nav class="categories inline">
+            @foreach (var part in Parts)
+            {
+                var p = part;
+                <button class="category @(p == current ? "active" : "")" @onclick="() => current = p">
+                    <img src="@Icon(p)" alt="" />
+                    <span>@Name(p) @Count(p)</span>
+                </button>
+            }
+        </nav>
+        <div class="tiles museum-tiles">
+            @foreach (var id in Items(current))
+            {
+                var item = id;
+                var given = donated.Contains(item);
+                <button class="tile @(given ? "selected" : "")" title="@GameInfo.Strings.itemlist[item]" @onclick="() => Toggle(item)">
+                    <ItemImage Src="@Catalog.PictureOf(new Item(item))" Alt="@GameInfo.Strings.itemlist[item]" />
+                    <span>@GameInfo.Strings.itemlist[item]</span>
+                    <small>@(given ? L.T("gespendet", "donated") : L.T("fehlt", "missing"))</small>
+                </button>
+            }
+        </div>
+        <p class="hint">@L.T("Tippe auf ein Bild, um es zu spenden oder die Spende zurückzunehmen. Neue Spenden zählen für Spieler 1 mit dem heutigen Datum.",
+                             "Tap a picture to donate it or to take the donation back. New donations count for player 1 with today's date.")</p>
+    }
+</details>
+
+@code {
+    private enum Part { Fish, Bugs, Dive, Fossils, Art }
+
+    private static readonly Part[] Parts = Enum.GetValues<Part>();
+
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private bool open;
+    private Part current;
+    private HashSet<ushort> donated = [];
+
+    private MainSave Main => Session.Save!.Main;
+
+    private async Task Opened()
+    {
+        open = true;
+        await Catalog.EnsureLoadedAsync();
+        Load();
+    }
+
+    private void Load() => donated = Main.Museum.GetItems().Where(i => !i.IsNone).Select(i => i.ItemId).ToHashSet();
+
+    private static IEnumerable<ushort> Items(Part part) => part switch
+    {
+        Part.Fish => GameLists.Fish.ToArray(),
+        Part.Bugs => GameLists.Bugs.ToArray(),
+        Part.Dive => GameLists.Dive.ToArray(),
+        Part.Fossils => GameLists.Fossils.ToArray(),
+        _ => Art,
+    };
+
+    // forgeries ("(fake)" in the English names) cannot be donated
+    private static readonly ushort[] Art = GameLists.Art.ToArray()
+        .Where(id => !GameInfo.GetStrings("en").itemlist[id].Contains('(')).ToArray();
+
+    private string Count(Part part)
+    {
+        var items = Items(part).ToList();
+        return $"{items.Count(donated.Contains)}/{items.Count}";
+    }
+
+    private static string Name(Part part) => part switch
+    {
+        Part.Fish => L.T("Fische", "Fish"),
+        Part.Bugs => L.T("Insekten", "Bugs"),
+        Part.Dive => L.T("Meerestiere", "Sea creatures"),
+        Part.Fossils => L.T("Fossilien", "Fossils"),
+        _ => L.T("Kunst", "Art"),
+    };
+
+    private static string Icon(Part part) => part switch
+    {
+        Part.Fish => "menuicon/FishBlackbass.png",
+        Part.Bugs => "menuicon/InsMonshirocho.png",
+        Part.Dive => "menuicon/Tako.png",
+        Part.Fossils => "menuicon/Fossil.png",
+        _ => "menuicon/Present.png",
+    };
+
+    // the museum keeps a date and the donating player next to every piece
+    private async Task Toggle(ushort id)
+    {
+        var museum = Main.Museum;
+        var editor = new MuseumEditor(museum);
+        var index = Array.FindIndex(editor.Items, i => i.ItemId == id);
+        if (index >= 0)
+        {
+            editor.Items[index] = new Item(Item.NONE);
+            editor.Dates[index] = default;
+            editor.Players[index] = 0;
+            editor.SortAll();
+        }
+        else
+        {
+            var free = Array.FindIndex(editor.Items, i => i.IsNone);
+            if (free < 0)
+                return;
+            editor.Items[free] = new Item(id);
+            editor.Dates[free] = DateTime.Now;
+            editor.Players[free] = 0;
+        }
+        editor.Save();
+        Main.Museum = museum;
+        Session.MarkDirty();
+        Load();
+        await Changed.InvokeAsync();
+    }
+}

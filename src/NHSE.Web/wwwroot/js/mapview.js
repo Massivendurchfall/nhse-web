@@ -142,6 +142,28 @@ export function setView(x, y, n, tiles, selection, cursor, tool) {
     redraw();
 }
 
+/** Saves the whole island as a PNG, every tile drawn as a 4 x 4 pixel square. */
+export function exportMap(fileName) {
+    const scale = 4;
+    const canvas = document.createElement('canvas');
+    canvas.width = s.width * scale;
+    canvas.height = s.height * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(s.terrain, 0, 0, canvas.width, canvas.height);
+    if (s.items) ctx.drawImage(s.items, 0, 0, canvas.width, canvas.height);
+    drawBuildings(ctx, scale, 0, 0);
+    canvas.toBlob(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    }, 'image/png');
+}
+
 export function disposeMap() {
     s?.resize.disconnect();
     s = null;

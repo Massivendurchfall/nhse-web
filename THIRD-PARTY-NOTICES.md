@@ -6,7 +6,7 @@
 
 ## Norviah/animal-crossing
 
-`src/NHSE.Web/wwwroot/data/catalog.json` is generated from the data of [Norviah/animal-crossing](https://github.com/Norviah/animal-crossing):
+`src/NHSE.Web/wwwroot/data/catalog.json` and `achievements.json` are generated from the data of [Norviah/animal-crossing](https://github.com/Norviah/animal-crossing):
 
 ```
 MIT License

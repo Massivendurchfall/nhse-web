@@ -1,9 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Builds NHSE.Core from the unmodified upstream sources in external/NHSE for the browser.
-    The only swap is Encryption/AesCtr.cs: .NET has no AES on WebAssembly, so Crypto/AesCtr.cs
-    provides the same internal class with a managed AES-128 implementation.
+    Builds NHSE.Core from the upstream sources in external/NHSE for the browser, with two swaps:
+    Encryption/AesCtr.cs, as .NET has no AES on WebAssembly, so Crypto/AesCtr.cs provides the same
+    internal class with a managed AES-128 implementation; and the three structures with bool arrays
+    (Patched/), which the WebAssembly marshaller would write with 4 bytes per flag.
   -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -20,10 +21,12 @@
 
   <ItemGroup>
     <Compile Include="$(NhseCore)**\*.cs"
-             Exclude="$(NhseCore)bin\**;$(NhseCore)obj\**;$(NhseCore)Encryption\AesCtr.cs"
+             Exclude="$(NhseCore)bin\**;$(NhseCore)obj\**;$(NhseCore)Encryption\AesCtr.cs;$(NhseCore)Structures\Misc\AchievementList.cs;$(NhseCore)Structures\Misc\GSavePlayerManpu.cs;$(NhseCore)Structures\Misc\GSaveVisitorNpc.cs"
              LinkBase="NHSE.Core" />
     <Compile Include="Crypto\AesCtr.cs" />
     <Compile Include="MemorySaveFileProvider.cs" />
+    <!-- bool arrays marshal as 4 bytes per flag on WebAssembly; these copies store the flags as bytes -->
+    <Compile Include="Patched\*.cs" />
   </ItemGroup>
 
   <!--
