@@ -15,8 +15,10 @@
     <div class="map-toolbar">
         <div class="segmented">
             <button class="@(mode == Mode.Look ? "active" : "")" @onclick="() => SetMode(Mode.Look)">@L.T("Ansehen", "Look")</button>
-            <button class="@(mode == Mode.Place ? "active" : "")" @onclick="() => SetMode(Mode.Place)">@L.T("Platzieren", "Place")</button>
+            <button class="@(mode == Mode.Place ? "active" : "")" @onclick="() => SetMode(Mode.Place)">@L.T("Setzen", "Place")</button>
             <button class="@(mode == Mode.Erase ? "active" : "")" @onclick="() => SetMode(Mode.Erase)">@L.T("Entfernen", "Remove")</button>
+            <button class="@(mode == Mode.Area ? "active" : "")" @onclick="() => SetMode(Mode.Area)">@L.T("Bereich", "Area")</button>
+            <button class="@(mode == Mode.Paths ? "active" : "")" @onclick="() => SetMode(Mode.Paths)">@L.T("Wege", "Paths")</button>
         </div>
         <div class="segmented">
             <button class="@(across == 16 ? "active" : "")" @onclick="() => Zoom(16)">@L.T("Nah", "Close")</button>
@@ -25,58 +27,105 @@
         <button class="small" @onclick="Undo" disabled="@(undo.Count == 0)">&#x21B6; @L.T("Rückgängig", "Undo")</button>
     </div>
 
-    @* one bar for the current item or the tapped tile, so the map never moves *@
+    @* one bar for the current tool, so the map never moves *@
     <div class="map-bar">
-        @if (mode == Mode.Place)
+        @switch (mode)
         {
-            @if (brush is null)
-            {
-                <button class="primary" @onclick="() => picking = Picking.Brush">@L.T("Gegenstand wählen", "Choose an item")</button>
-                <span class="hint">@L.T("Danach tippst du auf der Karte, wo er hin soll.", "Then tap on the map where it should go.")</span>
-            }
-            else
-            {
-                var (w, h) = IslandMap.Footprint(brush);
-                <ItemImage Src="@Picture(brush)" Alt="@GameInfo.Strings.GetItemName(brush)" />
-                <div class="brush-text">
-                    <strong>@GameInfo.Strings.GetItemName(brush)</strong>
-                    <span class="hint">@L.T($"{w} x {h} Felder", $"{w} x {h} tiles")</span>
-                </div>
-                <button class="small" @onclick="Rotate">&#x21BB; @L.T("Drehen", "Rotate")</button>
-                <button class="small" @onclick="() => picking = Picking.Brush">@L.T("Anderer Gegenstand", "Other item")</button>
-            }
-        }
-        else if (mode == Mode.Look && selected is { } sel)
-        {
-            var tile = map!.Layer(layerIndex).GetTile(sel.RelX, sel.RelY);
-            @if (tile.IsNone)
-            {
-                <span class="plus">+</span>
-                <div class="brush-text">
-                    <strong>@L.T("Leeres Feld", "Empty tile")</strong>
-                    <span class="hint">@Position(sel)</span>
-                </div>
-                <button class="small" @onclick="() => picking = Picking.Replace">@L.T("Hier etwas hinlegen", "Put something here")</button>
-            }
-            else
-            {
-                <ItemImage Src="@Picture(tile)" Alt="@GameInfo.Strings.GetItemName(tile)" />
-                <div class="brush-text">
-                    <strong>@ItemName(tile)</strong>
-                    <span class="hint">@Position(sel)</span>
-                </div>
-                @if (tile.ItemId < Item.FieldItemMin)
+            case Mode.Place:
+                @if (brush is null)
                 {
-                    <button class="small" @onclick="() => picking = Picking.Replace">@L.T("Ersetzen", "Replace")</button>
+                    <span class="hint">@L.T("Was möchtest du setzen?", "What do you want to place?")</span>
                 }
-                <button class="small danger" @onclick="RemoveSelected">@L.T("Entfernen", "Remove")</button>
-            }
-        }
-        else
-        {
-            <span class="hint">@(mode == Mode.Erase
-                ? L.T("Tippe auf einen Gegenstand, um ihn zu entfernen.", "Tap an item to remove it.")
-                : L.T("Tippe auf ein Feld, um zu sehen, was dort liegt.", "Tap a tile to see what lies there."))</span>
+                else
+                {
+                    var (w, h) = IslandMap.Footprint(brush);
+                    <ItemImage Src="@Picture(brush)" Alt="@FieldItems.Name(brush)" />
+                    <div class="brush-text">
+                        <strong>@FieldItems.Name(brush)</strong>
+                        <span class="hint">@L.T($"{w} x {h} Felder. Tippen oder mit gedrückter Taste malen.", $"{w} x {h} tiles. Tap, or hold and drag to paint.")</span>
+                    </div>
+                    @if (brush.IsFieldItem)
+                    {
+                        <BrushSize Value="@size" ValueChanged="SetSize" />
+                    }
+                    else
+                    {
+                        <button class="small" @onclick="Rotate">&#x21BB; @L.T("Drehen", "Rotate")</button>
+                    }
+                }
+                <button class="small @(brush is null ? "primary" : "")" @onclick="() => picking = Picking.Brush">@L.T("Gegenstand", "Item")</button>
+                <button class="small @(brush is null ? "primary" : "")" @onclick="() => picking = Picking.NatureBrush">@L.T("Natur", "Nature")</button>
+                break;
+
+            case Mode.Erase:
+                <span class="hint grow">@L.T("Tippe auf etwas oder fahre mit gedrückter Taste darüber, um es zu entfernen.",
+                                             "Tap something, or hold and drag over it, to remove it.")</span>
+                <BrushSize Value="@size" ValueChanged="SetSize" />
+                break;
+
+            case Mode.Area when area is { } a:
+                <div class="brush-text">
+                    <strong>@L.T($"Bereich {a.W} x {a.H} Felder", $"Area of {a.W} x {a.H} tiles")</strong>
+                    <span class="hint">@L.T("Zieh ein neues Rechteck auf, um den Bereich zu ändern.", "Drag a new rectangle to change the area.")</span>
+                </div>
+                <button class="small danger" @onclick="ClearArea">@L.T("Leeren", "Clear")</button>
+                <button class="small" @onclick="WeedArea">@L.T("Unkraut weg", "Remove weeds")</button>
+                <button class="small" @onclick="FillArea" disabled="@(brush is null)"
+                        title="@(brush is null ? L.T("Wähle zuerst unter „Setzen“ etwas aus.", "Choose something under \"Place\" first.") : FieldItems.Name(brush))">
+                    @L.T("Füllen", "Fill")@(brush is null ? "" : $": {FieldItems.Name(brush)}")
+                </button>
+                <button class="small" @onclick="() => PathArea(pathType)">@L.T("Weg legen", "Lay path"): @RoadShapes.TypeName(pathType)</button>
+                <button class="small" @onclick="() => PathArea(null)">@L.T("Wege entfernen", "Remove paths")</button>
+                break;
+
+            case Mode.Area:
+                <span class="hint">@L.T("Zieh mit gedrückter Taste ein Rechteck auf. Danach kannst du es leeren, mit etwas füllen oder einen Weg legen.",
+                                        "Hold and drag a rectangle. Then you can clear it, fill it or lay a path.")</span>
+                break;
+
+            case Mode.Paths:
+                <div class="path-types">
+                    @foreach (var t in RoadShapes.Types)
+                    {
+                        var type = t;
+                        <button class="path-type @(pathType == type && !pathEraser ? "active" : "")" @onclick="() => SetPathType(type)">
+                            <span class="swatch" style="background: @RoadShapes.TypeColor(type)"></span>@RoadShapes.TypeName(type)
+                        </button>
+                    }
+                    <button class="path-type @(pathEraser ? "active" : "")" @onclick="() => SetPathType(null)">
+                        <span class="swatch eraser"></span>@L.T("Weg entfernen", "Remove path")
+                    </button>
+                </div>
+                <BrushSize Value="@size" ValueChanged="SetSize" />
+                break;
+
+            case Mode.Look when selected is { } sel:
+                var tile = map!.Layer(layerIndex).GetTile(sel.RelX, sel.RelY);
+                @if (tile.IsNone)
+                {
+                    <span class="plus">+</span>
+                    <div class="brush-text">
+                        <strong>@L.T("Leeres Feld", "Empty tile")</strong>
+                        <span class="hint">@Position(sel)</span>
+                    </div>
+                    <button class="small" @onclick="() => picking = Picking.Replace">@L.T("Gegenstand hinlegen", "Put an item")</button>
+                    <button class="small" @onclick="() => picking = Picking.ReplaceNature">@L.T("Natur setzen", "Place nature")</button>
+                }
+                else
+                {
+                    <ItemImage Src="@Picture(tile)" Alt="@FieldItems.Name(tile)" />
+                    <div class="brush-text">
+                        <strong>@FieldItems.Name(tile)</strong>
+                        <span class="hint">@Position(sel)</span>
+                    </div>
+                    <button class="small" @onclick="() => picking = tile.IsFieldItem ? Picking.ReplaceNature : Picking.Replace">@L.T("Ersetzen", "Replace")</button>
+                    <button class="small danger" @onclick="RemoveSelected">@L.T("Entfernen", "Remove")</button>
+                }
+                break;
+
+            default:
+                <span class="hint">@L.T("Tippe auf ein Feld, um zu sehen, was dort liegt.", "Tap a tile to see what lies there.")</span>
+                break;
         }
     </div>
 
@@ -100,23 +149,29 @@
     {
         <p class="hint center">@message</p>
     }
-    <p class="hint">@L.T("Stell nichts ins Wasser, auf Klippen oder in Gebäude, das mag das Spiel nicht. Bäume, Blumen und Felsen kannst du hier entfernen, aber nicht neu setzen.",
-                         "Do not put anything into water, on cliffs or into buildings, the game does not like that. Trees, flowers and rocks can be removed here but not placed.")</p>
+    <p class="hint">@L.T("Stell nichts ins Wasser, auf Klippen oder in Gebäude, das mag das Spiel nicht. Wege suchen sich ihre Ränder selbst. Klippen, Flüsse und Gebäude lassen sich hier nicht verändern.",
+                         "Do not put anything into water, on cliffs or into buildings, the game does not like that. Paths pick their edges by themselves. Cliffs, rivers and buildings cannot be changed here.")</p>
 </section>
 
-@if (picking != Picking.None)
+@if (picking is Picking.Brush or Picking.Replace)
 {
-    <ItemPickerDialog Title="@(picking == Picking.Brush ? L.T("Was möchtest du platzieren?", "What do you want to place?") : L.T("Was soll hier liegen?", "What should lie here?"))"
+    <ItemPickerDialog Title="@(picking == Picking.Brush ? L.T("Was möchtest du setzen?", "What do you want to place?") : L.T("Was soll hier liegen?", "What should lie here?"))"
                       Current="@(picking == Picking.Replace && selected is { } s ? map!.Layer(layerIndex).GetTile(s.RelX, s.RelY) : brush)"
                       Picked="Picked" Closed="() => picking = Picking.None" />
 }
+else if (picking is Picking.NatureBrush or Picking.ReplaceNature)
+{
+    <NaturePickerDialog Picked="PickedNature" Closed="() => picking = Picking.None" />
+}
 
 @code {
-    private enum Mode { Look, Place, Erase }
-    private enum Picking { None, Brush, Replace }
+    private enum Mode { Look, Place, Erase, Area, Paths }
+    private enum Picking { None, Brush, NatureBrush, Replace, ReplaceNature }
     private readonly record struct Spot(int RelX, int RelY);
+    private readonly record struct Area(int X, int Y, int W, int H);
 
     private const int UndoDepth = 30;
+    private const string Remove = "#d0613a";
 
     private IslandMap? map;
     private ElementReference overview;
@@ -130,12 +185,20 @@
     private int viewX;
     private int viewY;
     private int across = 32;
+    private int size = 1; // brush size in terrain tiles: 1, 3 or 5
     private Item? brush;
+    private string pathType = "Stone";
+    private bool pathEraser;
     private Spot? selected;
+    private Area? area;
     private string? message;
-    private readonly LinkedList<ulong[]> undo = new();
+    private readonly LinkedList<IslandMap.State> undo = new();
+    private IslandMap.State? strokeStart;
+    private bool strokeChanged;
+    private (int X0, int Y0, int X1, int Y1)? dirtyTerrain;
 
     private MainSave Main => Session.Save!.Main;
+    private LayerFieldItem Ground => map!.Layer(layerIndex);
 
     protected override void OnInitialized()
     {
@@ -159,6 +222,8 @@
         await DrawView();
     }
 
+    // ---- drawing ----
+
     private Task DrawItems()
     {
         var buildings = map!.Buildings.Where(b => b.BuildingType != 0).Select(b => new[] { (int)b.X, (int)b.Y });
@@ -169,14 +234,14 @@
     {
         if (module is null)
             return Task.CompletedTask;
-        var layer = map!.Layer(layerIndex);
+        var layer = Ground;
         var tiles = new List<object[]>();
         // roots up to 8 tiles above or left of the view can still reach into it
         for (int y = viewY - 8; y < viewY + across; y++)
         {
             for (int x = viewX - 8; x < viewX + across; x++)
             {
-                if (!map.TryGetRelative(x, y, out var relX, out var relY))
+                if (!map!.TryGetRelative(x, y, out var relX, out var relY))
                     continue;
                 var tile = layer.GetTile(relX, relY);
                 if (tile.IsNone || !tile.IsRoot)
@@ -189,21 +254,52 @@
         }
 
         int[]? selection = null;
-        if (selected is { } s)
+        if (mode == Mode.Area && area is { } a)
+        {
+            selection = [a.X, a.Y, a.W, a.H];
+        }
+        else if (mode == Mode.Look && selected is { } s)
         {
             var tile = layer.GetTile(s.RelX, s.RelY);
             var (w, h) = tile.IsNone ? (1, 1) : IslandMap.Footprint(tile);
-            var (x, y) = map.GetAbsolute(s.RelX, s.RelY);
+            var (x, y) = map!.GetAbsolute(s.RelX, s.RelY);
             selection = [x, y, w, h];
         }
-        object[]? cursor = null;
-        if (mode == Mode.Place && brush is not null)
-        {
-            var (w, h) = IslandMap.Footprint(brush);
-            cursor = [w, h, brush.IsFieldItem, Picture(brush)];
-        }
-        return module.InvokeVoidAsync("setView", viewX, viewY, across, tiles, selection, cursor).AsTask();
+
+        var tool = mode switch { Mode.Look => "look", Mode.Area => "area", _ => "paint" };
+        return module.InvokeVoidAsync("setView", viewX, viewY, across, tiles, selection, Cursor(), tool).AsTask();
     }
+
+    // what follows the mouse: [width, height, snap to even tiles, picture, colour, tiles to step back]
+    private object[]? Cursor()
+    {
+        var side = size * 2;
+        var back = (size / 2) * 2;
+        switch (mode)
+        {
+            case Mode.Place when brush is not null:
+                if (brush.IsFieldItem && size > 1)
+                    return [side, side, true, Picture(brush), "#4fae6b", back];
+                var (w, h) = IslandMap.Footprint(brush);
+                return [w, h, brush.IsFieldItem, Picture(brush), "#4fae6b", 0];
+            case Mode.Erase:
+                return size == 1 ? [1, 1, false, null!, Remove, 0] : [side, side, true, null!, Remove, back];
+            case Mode.Paths:
+                return [side, side, true, null!, pathEraser ? Remove : RoadShapes.TypeColor(pathType), back];
+            default:
+                return null;
+        }
+    }
+
+    private async Task DrawTerrain(int relX0, int relY0, int relX1, int relY1)
+    {
+        if (module is null)
+            return;
+        var (x, y, w, h, pixels) = map!.TerrainPatch(relX0, relY0, relX1, relY1);
+        await module.InvokeVoidAsync("patchTerrain", x, y, w, h, pixels);
+    }
+
+    // ---- view ----
 
     private void ClampView()
     {
@@ -238,42 +334,115 @@
         await DrawView();
     }
 
+    // ---- taps and strokes ----
+
     [JSInvokable]
     public async Task OnDetailClick(int x, int y)
     {
         message = null;
-        if (!map!.TryGetRelative(x, y, out var relX, out var relY))
-        {
-            message = L.T("Dort ist Meer oder Strandrand, da kann nichts liegen.", "That is sea or the edge of the beach, nothing can lie there.");
-            StateHasChanged();
-            return;
-        }
-        var layer = map.Layer(layerIndex);
         switch (mode)
         {
             case Mode.Look:
-                selected = RootOf(layer, relX, relY);
-                break;
-            case Mode.Erase:
-                var root = RootOf(layer, relX, relY);
-                if (layer.GetTile(root.RelX, root.RelY).IsNone)
-                    break;
-                Remember();
-                Delete(layer, root);
-                await Changed();
+                if (map!.TryGetRelative(x, y, out var relX, out var relY))
+                    selected = RootOf(Ground, relX, relY);
+                else
+                    message = L.T("Dort ist Meer oder Strandrand, da kann nichts liegen.", "That is sea or the edge of the beach, nothing can lie there.");
                 break;
             case Mode.Place when brush is null:
-                picking = Picking.Brush;
+                message = L.T("Wähle oben zuerst einen Gegenstand oder etwas aus der Natur.", "First choose an item or some nature above.");
                 break;
-            case Mode.Place:
-                var placed = new Item(brush.RawValue);
-                if (Place(layer, placed, relX, relY))
+            default:
+                var before = map!.Snapshot();
+                if (PaintAt(x, y, single: true))
+                {
+                    Push(before);
                     await Changed();
+                }
+                await FlushTerrain();
                 break;
         }
         await DrawView();
         StateHasChanged();
     }
+
+    [JSInvokable]
+    public async Task OnPaint(int x, int y, bool first)
+    {
+        if (first)
+        {
+            message = null;
+            strokeStart = map!.Snapshot();
+            strokeChanged = false;
+        }
+        if (strokeStart is null)
+            return;
+        strokeChanged |= PaintAt(x, y, single: false);
+        await FlushTerrain();
+        await DrawView();
+    }
+
+    [JSInvokable]
+    public async Task OnPaintEnd()
+    {
+        if (strokeStart is not null && strokeChanged)
+        {
+            Push(strokeStart);
+            await Changed();
+        }
+        strokeStart = null;
+        await DrawView();
+        StateHasChanged();
+    }
+
+    // One dab of the current tool at an absolute tile. Single taps explain why nothing happened.
+    private bool PaintAt(int x, int y, bool single)
+    {
+        switch (mode)
+        {
+            case Mode.Erase:
+                var (ex, ey, eside) = size == 1 ? (x, y, 1) : Square(x, y);
+                return EraseArea(ex, ey, eside, eside, _ => true) > 0;
+            case Mode.Place when brush is not null:
+                if (brush.IsFieldItem && size > 1)
+                {
+                    var (px, py, side) = Square(x, y);
+                    return FillGrid(px, py, side, side, brush) > 0;
+                }
+                if (!map!.TryGetRelative(x, y, out var relX, out var relY))
+                {
+                    if (single)
+                        message = L.T("Dort ist Meer oder Strandrand, da kann nichts liegen.", "That is sea or the edge of the beach, nothing can lie there.");
+                    return false;
+                }
+                return Place(Ground, new Item(brush.RawValue), relX, relY, single);
+            case Mode.Paths:
+                var (tx, ty, tside) = Square(x, y);
+                var count = LayPath(tx, ty, tside, tside, pathEraser ? null : pathType);
+                if (count == 0 && single && !pathEraser)
+                    message = L.T("Wege gehen nur auf flachen Boden, nicht auf Strand, Wasser oder Klippen.", "Paths only go on flat ground, not on beach, water or cliffs.");
+                return count > 0;
+            default:
+                return false;
+        }
+    }
+
+    // square of the brush size around a tile, on the grid of terrain tiles (2 x 2 item tiles)
+    private (int X, int Y, int Side) Square(int x, int y)
+    {
+        var back = (size / 2) * 2;
+        return ((x & ~1) - back, (y & ~1) - back, size * 2);
+    }
+
+    [JSInvokable]
+    public async Task OnArea(int x0, int y0, int x1, int y1)
+    {
+        message = null;
+        area = new Area(Math.Min(x0, x1), Math.Min(y0, y1), Math.Abs(x1 - x0) + 1, Math.Abs(y1 - y0) + 1);
+        await DrawView();
+        StateHasChanged();
+    }
+
+    // ---- editing ----
 
     // an extension tile of a big item points back to the tile the item starts on
     private static Spot RootOf(LayerFieldItem layer, int relX, int relY)
@@ -297,7 +466,7 @@
     }
 
     // Same checks as NHSE's field item editor: plants snap to even tiles, nothing is overwritten.
-    private bool Place(LayerFieldItem layer, Item item, int relX, int relY)
+    private bool Place(LayerFieldItem layer, Item item, int relX, int relY, bool explain)
     {
         if (item.IsFieldItem)
         {
@@ -307,42 +476,186 @@
         switch (layer.IsOccupied(item, relX, relY))
         {
             case PlacedItemPermission.OutOfBounds:
-                message = L.T("Das passt dort nicht mehr auf die Insel.", "That does not fit on the island there.");
+                if (explain)
+                    message = L.T("Das passt dort nicht mehr auf die Insel.", "That does not fit on the island there.");
                 return false;
             case PlacedItemPermission.Collision:
-                message = L.T("Dort liegt schon etwas. Entferne es zuerst oder such dir freie Felder.",
-                    "Something is already there. Remove it first or pick free tiles.");
+                if (explain)
+                    message = L.T("Dort liegt schon etwas. Entferne es zuerst oder such dir freie Felder.",
+                        "Something is already there. Remove it first or pick free tiles.");
                 return false;
         }
-        Remember();
         layer.SetExtensionTiles(item, relX, relY);
         layer.GetTile(relX, relY).CopyFrom(item);
-        selected = new Spot(relX, relY);
+        if (explain)
+            selected = new Spot(relX, relY);
         return true;
     }
+
+    /// <summary>Removes everything whose tiles reach into the area and that matches; returns how many.</summary>
+    private int EraseArea(int x, int y, int w, int h, Func<Item, bool> match)
+    {
+        var layer = Ground;
+        int count = 0;
+        for (int ay = y; ay < y + h; ay++)
+        {
+            for (int ax = x; ax < x + w; ax++)
+            {
+                if (!map!.TryGetRelative(ax, ay, out var relX, out var relY))
+                    continue;
+                var root = RootOf(layer, relX, relY);
+                var tile = layer.GetTile(root.RelX, root.RelY);
+                if (tile.IsNone || !match(tile))
+                    continue;
+                Delete(layer, root);
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /// <summary>Puts the item on every free spot of the area, side by side; returns how many.</summary>
+    private int FillGrid(int x, int y, int w, int h, Item item)
+    {
+        var (fw, fh) = IslandMap.Footprint(item);
+        if (item.IsFieldItem)
+        {
+            // plants sit on whole terrain tiles
+            w += x & 1;
+            h += y & 1;
+            x &= ~1;
+            y &= ~1;
+            fw = Math.Max(2, fw);
+            fh = Math.Max(2, fh);
+        }
+        int count = 0;
+        for (int ay = y; ay + fh <= y + h; ay += fh)
+        {
+            for (int ax = x; ax + fw <= x + w; ax += fw)
+            {
+                if (map!.TryGetRelative(ax, ay, out var relX, out var relY) && Place(Ground, new Item(item.RawValue), relX, relY, false))
+                    count++;
+            }
+        }
+        return count;
+    }
+
+    /// <summary>Lays (or with null removes) a path on the terrain tiles under an item tile area; returns how many changed.</summary>
+    private int LayPath(int x, int y, int w, int h, string? type)
+    {
+        int count = 0;
+        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+        for (int ay = y & ~1; ay < y + h; ay += 2)
+        {
+            for (int ax = x & ~1; ax < x + w; ax += 2)
+            {
+                if (!map!.TryGetTerrain(ax, ay, out var relX, out var relY) || !map.SetPath(relX, relY, type))
+                    continue;
+                count++;
+                minX = Math.Min(minX, relX);
+                minY = Math.Min(minY, relY);
+                maxX = Math.Max(maxX, relX);
+                maxY = Math.Max(maxY, relY);
+            }
+        }
+        if (count == 0)
+            return 0;
+        map!.ShapePaths(minX, minY, maxX, maxY);
+        // the ground picture is redrawn by FlushTerrain, after the edit is complete
+        dirtyTerrain = dirtyTerrain is { } d
+            ? (Math.Min(d.X0, minX), Math.Min(d.Y0, minY), Math.Max(d.X1, maxX), Math.Max(d.Y1, maxY))
+            : (minX, minY, maxX, maxY);
+        return count;
+    }
+
+    private async Task FlushTerrain()
+    {
+        if (dirtyTerrain is not { } d)
+            return;
+        dirtyTerrain = null;
+        await DrawTerrain(d.X0, d.Y0, d.X1, d.Y1);
+    }
+
+    private async Task Apply(Func<int> action, Func<int, string> done, string nothing)
+    {
+        var before = map!.Snapshot();
+        var count = action();
+        await FlushTerrain();
+        if (count == 0)
+        {
+            message = nothing;
+            return;
+        }
+        Push(before);
+        message = done(count);
+        await Changed();
+        await DrawView();
+    }
+
+    private Task ClearArea() => area is { } a
+        ? Apply(() => EraseArea(a.X, a.Y, a.W, a.H, _ => true),
+            n => L.T(n == 1 ? "1 Sache entfernt." : $"{n} Sachen entfernt.", n == 1 ? "Removed 1 thing." : $"Removed {n} things."), L.T("Im Bereich liegt nichts.", "Nothing lies in the area."))
+        : Task.CompletedTask;
+
+    private Task WeedArea() => area is { } a
+        ? Apply(() => EraseArea(a.X, a.Y, a.W, a.H, IsWeed),
+            n => L.T($"{n} mal Unkraut entfernt.", $"Removed {n} weeds."), L.T("Im Bereich wächst kein Unkraut.", "No weeds grow in the area."))
+        : Task.CompletedTask;
+
+    private Task FillArea() => area is { } a && brush is not null
+        ? Apply(() => FillGrid(a.X, a.Y, a.W, a.H, brush),
+            n => L.T($"{n} mal gesetzt.", $"Placed {n} times."), L.T("Im Bereich ist kein freier Platz dafür.", "There is no free room for it in the area."))
+        : Task.CompletedTask;
+
+    private Task PathArea(string? type) => area is { } a
+        ? Apply(() => LayPath(a.X, a.Y, a.W, a.H, type),
+            n => type is null ? L.T($"Weg von {Tiles(n)} entfernt.", $"Removed the path from {n} tiles.") : L.T($"Weg auf {Tiles(n)} gelegt.", $"Laid a path on {n} tiles."),
+            type is null ? L.T("Im Bereich liegt kein Weg.", "There is no path in the area.") : L.T("Wege gehen nur auf flachen Boden, nicht auf Strand, Wasser oder Klippen.", "Paths only go on flat ground, not on beach, water or cliffs."))
+        : Task.CompletedTask;
+
+    private static string Tiles(int n) => n == 1 ? "1 Feld" : $"{n} Feldern";
+
+    private static bool IsWeed(Item tile) => FieldItemList.Items.TryGetValue(tile.ItemId, out var def) && def.Kind.IsWeed;
 
     private async Task Picked(Item item)
     {
         var target = picking;
         picking = Picking.None;
-        message = null;
         if (target == Picking.Brush)
-        {
-            brush = item;
-            mode = Mode.Place;
-            await DrawView();
-            return;
-        }
+            await SetBrush(item);
+        else
+            await ReplaceSelected(item);
+    }
+
+    private async Task PickedNature(ushort id)
+    {
+        var target = picking;
+        picking = Picking.None;
+        if (target == Picking.NatureBrush)
+            await SetBrush(new Item(id));
+        else
+            await ReplaceSelected(new Item(id));
+    }
+
+    private async Task SetBrush(Item item)
+    {
+        message = null;
+        brush = item;
+        mode = Mode.Place;
+        await DrawView();
+    }
+
+    // replace: take the old item away first, put it back if the new one does not fit
+    private async Task ReplaceSelected(Item item)
+    {
+        message = null;
         if (selected is not { } spot)
             return;
-        // replace: take the old item away first, put it back if the new one does not fit
-        var layer = map!.Layer(layerIndex);
-        var before = map.Snapshot();
-        Delete(layer, spot);
-        if (Place(layer, item, spot.RelX, spot.RelY))
+        var before = map!.Snapshot();
+        Delete(Ground, spot);
+        if (Place(Ground, item, spot.RelX, spot.RelY, true))
         {
-            undo.RemoveFirst(); // Place remembered the state without the old item
-            undo.AddFirst(before);
+            Push(before);
             await Changed();
         }
         else
@@ -356,8 +669,8 @@
     {
         if (selected is not { } spot)
             return;
-        Remember();
-        Delete(map!.Layer(layerIndex), spot);
+        Push(map!.Snapshot());
+        Delete(Ground, spot);
         await Changed();
         await DrawView();
     }
@@ -374,8 +687,20 @@
     {
         mode = value;
         message = null;
-        if (mode == Mode.Place && brush is null)
-            picking = Picking.Brush;
+        await DrawView();
+    }
+
+    private async Task SetSize(int value)
+    {
+        size = value;
+        await DrawView();
+    }
+
+    private async Task SetPathType(string? type)
+    {
+        pathEraser = type is null;
+        if (type is not null)
+            pathType = type;
         await DrawView();
     }
 
@@ -387,9 +712,9 @@
         await DrawView();
     }
 
-    private void Remember()
+    private void Push(IslandMap.State state)
     {
-        undo.AddFirst(map!.Snapshot());
+        undo.AddFirst(state);
         if (undo.Count > UndoDepth)
             undo.RemoveLast();
     }
@@ -402,6 +727,8 @@
         map!.Restore(last.Value);
         message = null;
         await Changed();
+        if (module is not null)
+            await module.InvokeVoidAsync("patchTerrain", 0, 0, map.Width, map.Height, map.TerrainPixels());
         await DrawView();
     }
 
@@ -412,106 +739,16 @@
         await DrawItems();
     }
 
+    private string Picture(Item item) => FieldItems.Picture(item, Catalog);
+
     private string Position(Spot spot)
     {
         var (x, y) = map!.GetAbsolute(spot.RelX, spot.RelY);
         var acre = $"{(char)('A' + (y / 32) - 1)}{x / 32}";
-        return L.T($"Feld {spot.RelX}, {spot.RelY} im Bereich {acre}", $"Tile {spot.RelX}, {spot.RelY} in acre {acre}");
-    }
-
-    private static string ItemName(Item tile)
-    {
-        // NHSE only has internal names like "PltFlwRose3Red" for plants and rocks
-        if (tile.ItemId >= Item.FieldItemMin && FieldItemList.Items.TryGetValue(tile.ItemId, out var def))
-            return tile.ItemId is >= 0xEC9C and <= 0xECA0 ? L.T("Geldbaum", "Money tree") : FieldName(def.Kind);
-        return GameInfo.Strings.GetItemName(tile);
-    }
-
-    private string Picture(Item item) => item.ItemId >= Item.FieldItemMin
-        ? FieldIcon(item) ?? ItemCatalog.Fallback
-        : Catalog.PictureOf(item);
-
-    // Trees, flowers, weeds, rocks and fences have no catalog picture; NHSE's menu icons stand in.
-    private static string? FieldIcon(Item item)
-    {
-        if (item.ItemId is >= 0xEC9C and <= 0xECA0)
-            return "menuicon/PltMoney.png";
-        if (!FieldItemList.Items.TryGetValue(item.ItemId, out var def))
-            return null;
-        var kind = def.Kind.ToString();
-        var icon = kind switch
-        {
-            _ when kind.StartsWith("Fence") => "Fence",
-            _ when kind.StartsWith("LadderKit") => "FixedLadder",
-            _ when kind.StartsWith("PltWeed") => "PltWeedLight",
-            _ when kind.StartsWith("Stone") => "OreStone",
-            "PltBushAzalea" => "PltAzaleaPink",
-            "PltBushCamellia" => "PltBushCamelliaRed",
-            "PltBushHibiscus" => "PltHibiscusRed",
-            "PltBushHolly" => "PltHolly",
-            "PltBushHydrangea" => "PltHydrangeaBlue",
-            "PltBushOsmanthus" => "PltBushOsmathusOrange",
-            "PltBushPlumeria" => "PltBushPlumeriaWhite",
-            "PltFlwAnemone" => "PltAnemone0",
-            "PltFlwCosmos" => "PltCosmos0",
-            "PltFlwHyacinth" => "PltHyacinth0",
-            "PltFlwLily" or "PltFlwYuri" => "PltYuri0",
-            "PltFlwMum" => "PltMum0",
-            "PltFlwPansy" => "PltPansi0",
-            "PltFlwRose" => "PltRose0",
-            "PltFlwRoseGold" => "PltGoldenRose",
-            "PltFlwTulip" => "PltTurip0",
-            "PltTreeBamboo" => "PltBamboo",
-            "PltTreeCedar" or "PltTreeCedarDeco" => "PltConifer",
-            "PltTreeOak" => "PltOak",
-            "PltTreePalm" => "PltPalm",
-            "PltVgtCarrot" => "PltCarrot",
-            "PltVgtPotato" => "PltPotato",
-            "PltVgtPumpkin" => "PltSquashOrange",
-            "PltVgtSugarcane" => "PltSugarCane",
-            "PltVgtTomato" => "PltTomato",
-            "PltVgtWheat" => "PltWheat",
-            "PltVine" => "PltVine",
-            _ => null,
-        };
-        return icon is null ? null : $"menuicon/{icon}.png";
-    }
-
-    private static string FieldName(FieldItemKind kind)
-    {
-        var name = kind.ToString();
-        return name switch
-        {
-            "PltFlwAnemone" => L.T("Anemone", "Windflower"),
-            "PltFlwCosmos" => L.T("Kosmee", "Cosmos"),
-            "PltFlwHyacinth" => L.T("Hyazinthe", "Hyacinth"),
-            "PltFlwLily" or "PltFlwYuri" => L.T("Lilie", "Lily"),
-            "PltFlwMum" => L.T("Chrysantheme", "Mum"),
-            "PltFlwPansy" => L.T("Stiefmütterchen", "Pansy"),
-            "PltFlwRose" => L.T("Rose", "Rose"),
-            "PltFlwRoseGold" => L.T("Goldene Rose", "Gold rose"),
-            "PltFlwTulip" => L.T("Tulpe", "Tulip"),
-            "PltTreeBamboo" => L.T("Bambus", "Bamboo"),
-            "PltTreeCedar" or "PltTreeCedarDeco" => L.T("Nadelbaum", "Cedar"),
-            "PltTreeOak" => L.T("Laubbaum", "Hardwood tree"),
-            "PltTreePalm" => L.T("Palme", "Palm tree"),
-            "PltVgtCarrot" => L.T("Karotte", "Carrot"),
-            "PltVgtPotato" => L.T("Kartoffel", "Potato"),
-            "PltVgtPumpkin" => L.T("Kürbis", "Pumpkin"),
-            "PltVgtSugarcane" => L.T("Zuckerrohr", "Sugarcane"),
-            "PltVgtTomato" => L.T("Tomate", "Tomato"),
-            "PltVgtWheat" => L.T("Weizen", "Wheat"),
-            "PltVine" => L.T("Ranke", "Vine"),
-            _ when name.StartsWith("Fence") => L.T("Zaun", "Fence"),
-            _ when name.StartsWith("LadderKit") => L.T("Leiter", "Ladder"),
-            _ when name.StartsWith("PltWeed") => L.T("Unkraut", "Weed"),
-            _ when name.StartsWith("Stone") => L.T("Felsen", "Rock"),
-            _ when name.StartsWith("PltBush") => L.T("Strauch", "Bush"),
-            _ when name.StartsWith("PltFlw") => L.T("Blume", "Flower"),
-            _ when name.StartsWith("PltTree") => L.T("Baum", "Tree"),
-            _ when kind == FieldItemKind.UnitIconHole => L.T("Loch", "Hole"),
-            _ => name,
-        };
+        var text = L.T($"Feld {spot.RelX}, {spot.RelY} im Bereich {acre}", $"Tile {spot.RelX}, {spot.RelY} in acre {acre}");
+        if (map.TryGetTerrain(x, y, out var tx, out var ty) && RoadShapes.TypeOf(map.Terrain.GetTile(tx, ty)) is { } road)
+            text += L.T($", auf {RoadShapes.TypeName(road)}", $", on {RoadShapes.TypeName(road)}");
+        return text;
     }
 
     public async ValueTask DisposeAsync()

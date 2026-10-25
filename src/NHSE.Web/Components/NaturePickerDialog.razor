@@ -1,0 +1,94 @@
+@inject ItemCatalog Catalog
+
+<div class="dialog-backdrop" @onclick="Close">
+    <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+        <header class="dialog-head">
+            <h3>@L.T("Natur auswählen", "Choose nature")</h3>
+            <button class="icon-button" aria-label="@L.T("Schließen", "Close")" @onclick="Close">&#x2715;</button>
+        </header>
+
+        <nav class="categories">
+            @foreach (var g in FieldItems.Groups)
+            {
+                var item = g;
+                <button class="category @(item == group && filter.Length == 0 ? "active" : "")" @onclick="() => SelectGroup(item)">
+                    <img src="@FieldItems.GroupIcon(item)" alt="" />
+                    <span>@FieldItems.GroupName(item)</span>
+                </button>
+            }
+        </nav>
+
+        <div class="filter">
+            <input placeholder="@L.T("Filtern (optional)", "Filter (optional)")" value="@filter" @oninput="e => filter = ((string?)e.Value ?? string.Empty).Trim()" />
+            @if (filter.Length > 0)
+            {
+                <button class="icon-button" aria-label="@L.T("Filter löschen", "Clear filter")" @onclick="() => filter = string.Empty">&#x2715;</button>
+            }
+        </div>
+
+        <div class="tiles">
+            @foreach (var entry in Visible)
+            {
+                var e = entry;
+                <button class="tile @(selected?.Id == e.Id ? "selected" : "")" title="@e.Name" @onclick="() => selected = e">
+                    <ItemImage Src="@e.Picture" Alt="@e.Name" />
+                    <span>@e.Name</span>
+                </button>
+            }
+        </div>
+        @if (!Visible.Any())
+        {
+            <p class="hint center">@L.T("Hier ist nichts dabei.", "Nothing here.")</p>
+        }
+
+        <footer class="dialog-foot">
+            @if (selected is not null)
+            {
+                <div class="choice">
+                    <ItemImage Src="@selected.Picture" Alt="@selected.Name" Class="big" />
+                    <div class="choice-text">
+                        <strong>@selected.Name</strong>
+                        <span class="hint">@Hint(selected.Group)</span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <span class="hint">@L.T("Tippe auf ein Bild, um es auszuwählen.", "Tap a picture to choose it.")</span>
+            }
+            <div class="foot-buttons">
+                <button class="primary" disabled="@(selected is null)" @onclick="Confirm">@L.T("Übernehmen", "Use")</button>
+            </div>
+        </footer>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback<ushort> Picked { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private FieldItems.Group group;
+    private string filter = string.Empty;
+    private FieldItems.Entry? selected;
+
+    private IEnumerable<FieldItems.Entry> Visible => filter.Length > 0
+        ? FieldItems.All(Catalog).Where(e => e.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
+        : FieldItems.All(Catalog).Where(e => e.Group == group);
+
+    private static string Hint(FieldItems.Group group) => group switch
+    {
+        FieldItems.Group.Trees => L.T("Palmen wachsen am Strand, alle anderen Bäume nicht.", "Palms grow on the beach, all other trees do not."),
+        FieldItems.Group.Rocks => L.T("Felsen brauchen rundherum freien Platz, sonst lassen sie sich nicht abbauen.", "Rocks need free space around them, otherwise you cannot hit them."),
+        _ => L.T("Pflanzen belegen immer 2 x 2 Felder.", "Plants always take 2 x 2 tiles."),
+    };
+
+    private void SelectGroup(FieldItems.Group value)
+    {
+        group = value;
+        filter = string.Empty;
+    }
+
+    private Task Confirm() => selected is null ? Task.CompletedTask : Picked.InvokeAsync(selected.Id);
+
+    private Task Close() => Closed.InvokeAsync();
+}

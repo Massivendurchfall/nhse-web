@@ -1,5 +1,5 @@
 // Island map for the map editor: a small overview of the whole island and a detail view with
-// item pictures. .NET owns the data; this module only draws and reports clicked tiles.
+// item pictures. .NET owns the data; this module only draws and reports taps, strokes and areas.
 
 let s = null;
 
@@ -44,12 +44,16 @@ function redraw() {
     });
 }
 
+function detailTile(e) {
+    return tileAt(s.detail, e, s.view.n, s.view.n, s.view.x, s.view.y);
+}
+
 export function initMap(overview, detail, dotnet, width, height, terrain) {
     s = {
         overview, detail, dotnet, width, height,
         terrain: pixelCanvas(width, height, terrain),
         items: null, view: { x: 0, y: 0, n: 32 }, tiles: [], buildings: [],
-        selection: null, cursor: null, hover: null, images: new Map(),
+        selection: null, cursor: null, hover: null, tool: 'look', drag: null, images: new Map(),
     };
     overview.width = width * 2;
     overview.height = height * 2;
@@ -57,15 +61,48 @@ export function initMap(overview, detail, dotnet, width, height, terrain) {
         const p = tileAt(overview, e, width, height, 0, 0);
         if (p) dotnet.invokeMethodAsync('OnOverviewClick', p.x, p.y);
     });
-    detail.addEventListener('click', e => {
-        const p = tileAt(detail, e, s.view.n, s.view.n, s.view.x, s.view.y);
-        if (p) dotnet.invokeMethodAsync('OnDetailClick', p.x, p.y);
+
+    // A tap without moving is a click. Dragging paints tile by tile ('paint') or spans an area ('area').
+    detail.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        const p = detailTile(e);
+        if (!p) return;
+        s.drag = { start: p, last: p, moved: false };
+        detail.setPointerCapture(e.pointerId);
     });
-    detail.addEventListener('mousemove', e => {
-        s.hover = tileAt(detail, e, s.view.n, s.view.n, s.view.x, s.view.y);
-        if (s.cursor) redraw();
+    detail.addEventListener('pointermove', e => {
+        const p = detailTile(e);
+        s.hover = p;
+        const d = s.drag;
+        if (d && p && (p.x !== d.last.x || p.y !== d.last.y)) {
+            if (!d.moved && s.tool === 'paint')
+                dotnet.invokeMethodAsync('OnPaint', d.start.x, d.start.y, true);
+            d.moved = true;
+            d.last = p;
+            if (s.tool === 'paint')
+                dotnet.invokeMethodAsync('OnPaint', p.x, p.y, false);
+        }
+        if (s.cursor || d) redraw();
     });
-    detail.addEventListener('mouseleave', () => { s.hover = null; redraw(); });
+    const finish = (e, cancelled) => {
+        const d = s?.drag;
+        if (!d) return;
+        s.drag = null;
+        if (cancelled) {
+            if (d.moved && s.tool === 'paint') dotnet.invokeMethodAsync('OnPaintEnd');
+        } else if (s.tool === 'area') {
+            dotnet.invokeMethodAsync('OnArea', d.start.x, d.start.y, d.last.x, d.last.y);
+        } else if (!d.moved) {
+            dotnet.invokeMethodAsync('OnDetailClick', d.start.x, d.start.y);
+        } else if (s.tool === 'paint') {
+            dotnet.invokeMethodAsync('OnPaintEnd');
+        }
+        redraw();
+    };
+    detail.addEventListener('pointerup', e => finish(e, false));
+    detail.addEventListener('pointercancel', e => finish(e, true));
+    detail.addEventListener('pointerleave', () => { if (!s.drag) { s.hover = null; redraw(); } });
+
     s.resize = new ResizeObserver(() => {
         const size = Math.round(detail.clientWidth * (window.devicePixelRatio || 1));
         if (size > 0 && detail.width !== size) {
@@ -88,11 +125,20 @@ export function setItems(rgba, buildings) {
     redraw();
 }
 
-export function setView(x, y, n, tiles, selection, cursor) {
+/** Replaces a block of the ground picture after paths changed (item tile coordinates). */
+export function patchTerrain(x, y, w, h, rgba) {
+    s.terrain.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), x, y);
+    redraw();
+}
+
+export function setView(x, y, n, tiles, selection, cursor, tool) {
     s.view = { x, y, n };
     s.tiles = tiles;
     s.selection = selection;
     s.cursor = cursor;
+    s.tool = tool;
+    // painting and spanning areas need the finger on the map, looking leaves scrolling to the page
+    s.detail.style.touchAction = tool === 'look' ? 'manipulation' : 'none';
     redraw();
 }
 
@@ -137,6 +183,17 @@ function drawPicture(ctx, url, x, y, w, h, cell, alpha) {
     ctx.globalAlpha = 1;
 }
 
+function outline(ctx, x, y, w, h, cell, color, fill) {
+    const v = s.view;
+    if (fill) {
+        ctx.fillStyle = fill;
+        ctx.fillRect((x - v.x) * cell, (y - v.y) * cell, w * cell, h * cell);
+    }
+    ctx.lineWidth = Math.max(2, cell / 8);
+    ctx.strokeStyle = color;
+    ctx.strokeRect((x - v.x) * cell, (y - v.y) * cell, w * cell, h * cell);
+}
+
 function drawDetail() {
     if (!s || s.detail.width === 0) return;
     const ctx = s.detail.getContext('2d');
@@ -167,19 +224,19 @@ function drawDetail() {
 
     if (s.selection) {
         const [x, y, w, h] = s.selection;
-        ctx.lineWidth = Math.max(2, cell / 8);
-        ctx.strokeStyle = '#2fa9a1';
-        ctx.strokeRect((x - v.x) * cell, (y - v.y) * cell, w * cell, h * cell);
+        outline(ctx, x, y, w, h, cell, '#2fa9a1', s.tool === 'area' ? 'rgba(47, 169, 161, 0.18)' : null);
     }
-    if (s.cursor && s.hover) {
-        const [w, h, snap, url] = s.cursor;
+    const d = s.drag;
+    if (d && s.tool === 'area') {
+        const x = Math.min(d.start.x, d.last.x), y = Math.min(d.start.y, d.last.y);
+        outline(ctx, x, y, Math.abs(d.last.x - d.start.x) + 1, Math.abs(d.last.y - d.start.y) + 1, cell, '#2fa9a1', 'rgba(47, 169, 161, 0.18)');
+    } else if (s.cursor && s.hover) {
+        // [width, height, snap to even tiles, picture, colour, tiles to step back from the snapped tile]
+        const [w, h, snap, url, color, back] = s.cursor;
         let { x, y } = s.hover;
         if (snap) { x -= x % 2; y -= y % 2; }
-        ctx.fillStyle = 'rgba(79, 174, 107, 0.25)';
-        ctx.fillRect((x - v.x) * cell, (y - v.y) * cell, w * cell, h * cell);
+        x -= back; y -= back;
+        outline(ctx, x, y, w, h, cell, color, color + '40');
         drawPicture(ctx, url, x - v.x, y - v.y, w, h, cell, 0.6);
-        ctx.lineWidth = Math.max(2, cell / 8);
-        ctx.strokeStyle = '#4fae6b';
-        ctx.strokeRect((x - v.x) * cell, (y - v.y) * cell, w * cell, h * cell);
     }
 }

@@ -102,6 +102,7 @@ public sealed class SaveSession(IJSRuntime js)
                $"villagers {string.Join(" ", villagers)}, houses {houses}, turnips buy {main.Turnips.BuyPrice} mon am {main.Turnips.SellMondayAM}, " +
                $"museum {main.Museum.GetItems().Count(i => !i.IsNone)}, weeds {weeds}, " +
                $"ground roots {main.GetFieldItemLayer0().Count(t => t.IsRoot)} (furniture {main.GetFieldItemLayer0().Count(t => t.IsRoot && t.ItemId < Item.FieldItemMin)}), " +
+               $"path tiles {main.GetTerrainTiles().Count(t => t.UnitModelRoad.IsRoad)}, " +
                $"storage {p.ItemChest.Count(i => !i.IsNone)} of {p.ItemChestCount}: " +
                string.Join(", ", p.ItemChest.Where(i => !i.IsNone).Take(3).Select(i => $"{GameInfo.Strings.GetItemName(i)} x{i.Count + 1}"));
     }

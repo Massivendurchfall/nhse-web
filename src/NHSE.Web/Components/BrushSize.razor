@@ -1,0 +1,15 @@
+@* Brush size for the map tools, counted in terrain tiles (one terrain tile is 2 x 2 item tiles). *@
+<div class="segmented" title="@L.T("Pinselgröße", "Brush size")">
+    @foreach (var option in Sizes)
+    {
+        var value = option;
+        <button class="@(Value == value ? "active" : "")" @onclick="() => ValueChanged.InvokeAsync(value)">@(value == 1 ? "1" : $"{value}x{value}")</button>
+    }
+</div>
+
+@code {
+    private static readonly int[] Sizes = [1, 3, 5];
+
+    [Parameter] public int Value { get; set; }
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+}
