@@ -1,0 +1,201 @@
+@* The extra fields of NHSE's item editor: flower genes and watering, recipe card, fossil, wrapping, uses and raw values. *@
+<details class="raw-values" open="@Open">
+    <summary>@L.T("Details wie in NHSE", "Details like NHSE")</summary>
+    @if (Kind.IsFlowerGene(Value.ItemId))
+    {
+        <div class="raw-grid">
+            @foreach (var g in Genes)
+            {
+                var gene = g;
+                <label>
+                    <span>@L.T(gene.De, gene.En)</span>
+                    <select @onchange="e => SetGene(gene, e.Value)">
+                        @for (int n = 0; n <= 2; n++)
+                        {
+                            <option value="@n" selected="@(GeneCount(gene) == n)">@GeneLabel(gene, n)</option>
+                        }
+                    </select>
+                </label>
+            }
+            <label>
+                <span>@L.T("Tage gegossen", "Days watered")</span>
+                <input type="number" min="0" max="31" value="@Value.DaysWatered" @onchange="e => Edit(i => i.DaysWatered = Math.Clamp(Int(e.Value), 0, 31))" />
+            </label>
+        </div>
+        <label class="check"><input type="checkbox" checked="@Value.IsWatered" @onchange="e => Edit(i => i.IsWatered = e.Value is true)" />@L.T("Heute gegossen", "Watered today")</label>
+        <label class="check"><input type="checkbox" checked="@Value.IsWateredGold" @onchange="e => Edit(i => i.IsWateredGold = e.Value is true)" />@L.T("Mit der goldenen Gießkanne", "With the golden watering can")</label>
+        <p class="hint">@L.T("Gene bestimmen beim Kreuzen die Farbe der Nachkommen: R rot, Y gelb, W weiß, S Schattierung, jeweils 0 bis 2 Anlagen.",
+                             "Genes decide the colour of offspring when breeding: R red, Y yellow, W white, S shade, each 0 to 2 copies.")</p>
+    }
+    else if (Kind == ItemKind.Kind_DIYRecipe)
+    {
+        <label>
+            <span>@L.T("Rezept auf der Karte", "Recipe on the card")</span>
+            <select @onchange="e => Edit(i => i.FreeParam = Int(e.Value))">
+                @foreach (var (id, name) in Recipes)
+                {
+                    <option value="@id" selected="@(id == Value.FreeParam)">@name</option>
+                }
+            </select>
+        </label>
+    }
+    else if (Kind == ItemKind.Kind_FossilUnknown)
+    {
+        <label>
+            <span>@L.T("Fossil darin", "Fossil inside")</span>
+            <select @onchange="e => Edit(i => i.FreeParam = Int(e.Value))">
+                @foreach (var (id, name) in Fossils)
+                {
+                    <option value="@id" selected="@(id == Value.FreeParam)">@name</option>
+                }
+            </select>
+        </label>
+    }
+    else if (!Value.IsFieldItem && Kind != ItemKind.Kind_MessageBottle)
+    {
+        <div class="raw-grid">
+            <label>
+                <span>@L.T("Verpackung", "Wrapping")</span>
+                <select @onchange="e => SetWrap((ItemWrapping)Int(e.Value), Value.WrappingPaper, Value.WrappingShowItem)">
+                    @foreach (var w in Enum.GetValues<ItemWrapping>())
+                    {
+                        <option value="@((int)w)" selected="@(w == Value.WrappingType)">@WrapName(w)</option>
+                    }
+                </select>
+            </label>
+            @if (Value.WrappingType is not ItemWrapping.Nothing and not ItemWrapping.Festive)
+            {
+                <label>
+                    <span>@L.T("Farbe", "Colour")</span>
+                    <select @onchange="e => SetWrap(Value.WrappingType, (ItemWrappingPaper)Int(e.Value), Value.WrappingShowItem)">
+                        @foreach (var c in Enum.GetValues<ItemWrappingPaper>())
+                        {
+                            <option value="@((int)c)" selected="@(c == Value.WrappingPaper)">@ColorName(c)</option>
+                        }
+                    </select>
+                </label>
+            }
+            <label>
+                <span>@L.T("Benutzt (Werkzeuge)", "Uses (tools)")</span>
+                <input type="number" min="0" max="65535" value="@Value.UseCount" @onchange="e => Edit(i => i.UseCount = (ushort)Math.Clamp(Int(e.Value), 0, ushort.MaxValue))" />
+            </label>
+        </div>
+        @if (Value.WrappingType != ItemWrapping.Nothing)
+        {
+            <label class="check">
+                <input type="checkbox" checked="@Value.WrappingShowItem" @onchange="e => SetWrap(Value.WrappingType, Value.WrappingPaper, e.Value is true)" />
+                @L.T("Name des Inhalts zeigen", "Show the name of the content")
+            </label>
+        }
+    }
+    <div class="raw-grid">
+        <label><span>SystemParam</span><input type="number" min="0" max="255" value="@Value.SystemParam" @onchange="e => Edit(i => i.SystemParam = (byte)Math.Clamp(Int(e.Value), 0, 255))" /></label>
+        <label><span>AdditionalParam</span><input type="number" min="0" max="255" value="@Value.AdditionalParam" @onchange="e => Edit(i => i.AdditionalParam = (byte)Math.Clamp(Int(e.Value), 0, 255))" /></label>
+        <label><span>FreeParam</span><input type="number" min="0" value="@Value.FreeParam" @onchange="e => Edit(i => i.FreeParam = int.TryParse(e.Value?.ToString(), out var v) ? v : i.FreeParam)" /></label>
+    </div>
+</details>
+
+@code {
+    private sealed record Gene(string De, string En, FlowerGene One, FlowerGene Two, bool Inverted, char Letter);
+
+    // white is stored inverted, like NHSE: a set bit means no white copy
+    private static readonly Gene[] Genes =
+    [
+        new("Rot", "Red", FlowerGene.R1, FlowerGene.R2, false, 'R'),
+        new("Gelb", "Yellow", FlowerGene.Y1, FlowerGene.Y2, false, 'Y'),
+        new("Weiß", "White", FlowerGene.w1, FlowerGene.w2, true, 'W'),
+        new("Schattierung", "Shade", FlowerGene.S1, FlowerGene.S2, false, 'S'),
+    ];
+
+    private static List<(int Id, string Name)>? recipes;
+    private static List<(int Id, string Name)>? fossils;
+
+    [Parameter, EditorRequired] public Item Value { get; set; } = null!;
+    [Parameter] public EventCallback<Item> ValueChanged { get; set; }
+    [Parameter] public bool Open { get; set; }
+
+    private ItemKind Kind => ItemInfo.GetItemKind(Value.ItemId);
+
+    private static List<(int Id, string Name)> Recipes => recipes ??= [.. RecipeList.Recipes.Keys
+        .Select(id => ((int)id, GameInfo.Strings.GetItemName(new Item(Item.DIYRecipe) { FreeParam = id })))
+        .OrderBy(r => r.Item2, StringComparer.CurrentCultureIgnoreCase)];
+
+    private static List<(int Id, string Name)> Fossils => fossils ??= [.. GameLists.Fossils.ToArray()
+        .Select(id => ((int)id, GameInfo.Strings.itemlist[id]))
+        .OrderBy(r => r.Item2, StringComparer.CurrentCultureIgnoreCase)];
+
+    private static int Int(object? value) => int.TryParse(value?.ToString(), out var v) ? v : 0;
+
+    private Task Edit(Action<Item> change)
+    {
+        var item = new Item(Value.RawValue);
+        change(item);
+        return ValueChanged.InvokeAsync(item);
+    }
+
+    private int GeneCount(Gene g)
+    {
+        var genes = Value.Genes;
+        int n = ((genes & g.One) != 0 ? 1 : 0) + ((genes & g.Two) != 0 ? 1 : 0);
+        return g.Inverted ? 2 - n : n;
+    }
+
+    private static string GeneLabel(Gene g, int n)
+    {
+        var big = g.Letter;
+        var small = char.ToLowerInvariant(g.Letter);
+        return n switch { 0 => $"{small}{small}", 1 => $"{big}{small}", _ => $"{big}{big}" };
+    }
+
+    private Task SetGene(Gene g, object? value)
+    {
+        var n = Math.Clamp(Int(value), 0, 2);
+        var bits = g.Inverted ? 2 - n : n;
+        return Edit(i =>
+        {
+            var genes = i.Genes & ~(g.One | g.Two);
+            if (bits >= 1)
+                genes |= g.One;
+            if (bits == 2)
+                genes |= g.Two;
+            i.Genes = genes;
+        });
+    }
+
+    private Task SetWrap(ItemWrapping type, ItemWrappingPaper color, bool show) => Edit(i =>
+    {
+        if (type == ItemWrapping.Nothing)
+            i.SetWrapping(0, 0);
+        else
+            i.SetWrapping(type, color, show, i.Wrapping80);
+    });
+
+    private static string WrapName(ItemWrapping w) => w switch
+    {
+        ItemWrapping.Nothing => L.T("Nicht verpackt", "Not wrapped"),
+        ItemWrapping.WrappingPaper => L.T("Geschenkpapier", "Wrapping paper"),
+        ItemWrapping.Present => L.T("Geschenk", "Present"),
+        ItemWrapping.Delivery => L.T("Lieferkarton", "Delivery box"),
+        _ => L.T("Festlich", "Festive"),
+    };
+
+    private static string ColorName(ItemWrappingPaper c) => c switch
+    {
+        ItemWrappingPaper.Yellow => L.T("Gelb", "Yellow"),
+        ItemWrappingPaper.Pink => L.T("Rosa", "Pink"),
+        ItemWrappingPaper.Orange => L.T("Orange", "Orange"),
+        ItemWrappingPaper.LightGreen => L.T("Hellgrün", "Light green"),
+        ItemWrappingPaper.Green => L.T("Grün", "Green"),
+        ItemWrappingPaper.Mint => L.T("Mint", "Mint"),
+        ItemWrappingPaper.LightBlue => L.T("Hellblau", "Light blue"),
+        ItemWrappingPaper.Purple => L.T("Lila", "Purple"),
+        ItemWrappingPaper.Navy => L.T("Marineblau", "Navy"),
+        ItemWrappingPaper.Blue => L.T("Blau", "Blue"),
+        ItemWrappingPaper.White => L.T("Weiß", "White"),
+        ItemWrappingPaper.Red => L.T("Rot", "Red"),
+        ItemWrappingPaper.Gold => L.T("Gold", "Gold"),
+        ItemWrappingPaper.Brown => L.T("Braun", "Brown"),
+        ItemWrappingPaper.Gray => L.T("Grau", "Gray"),
+        _ => L.T("Schwarz", "Black"),
+    };
+}

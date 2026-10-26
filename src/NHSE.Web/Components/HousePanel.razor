@@ -68,7 +68,51 @@
     }
     <p class="hint">@L.T("Ein Raum ist 20 x 20 Felder groß, kleine Möbel belegen 2 x 2. Räume, die das Haus noch nicht hat, erscheinen erst nach dem Ausbau im Spiel.",
                          "A room is 20 x 20 tiles, small furniture takes 2 x 2. Rooms the house does not have yet only show up in the game after the upgrade.")</p>
+
+    @if (manager?.Room is PlayerRoom1 surfaces)
+    {
+        <h4>@L.T($"Tapete und Boden in Raum {room + 1}", $"Wallpaper and flooring in room {room + 1}")</h4>
+        <RoomSurfaces Value="@surfaces.RoomFloorWall" ValueChanged="SetSurfaces" />
+    }
+
+    <div class="buttons">
+        <button @onclick="SaveRoom">@L.T($"Raum {room + 1} sichern (.{manager?.Room.Extension})", $"Save room {room + 1} (.{manager?.Room.Extension})")</button>
+        <label class="button">
+            @L.T($"Raum {room + 1} laden", $"Load room {room + 1}")
+            <InputFile accept=".nhpr,.nhpr2" OnChange="LoadRoom" />
+        </label>
+    </div>
 </section>
+
+@if (house is not null)
+{
+    <section class="card">
+        <header class="card-head">
+            <h3 class="with-icon"><img src="menuicon/Porch.png" alt="" />@L.T("Das Haus von außen", "The house from outside")</h3>
+        </header>
+        <HouseExterior House="house" ForPlayer="true" Changed="StoreHouse" />
+        <div class="buttons">
+            <button @onclick="SaveHouse">@L.T($"Ganzes Haus sichern (.{house.Extension})", $"Save the whole house (.{house.Extension})")</button>
+            <label class="button">
+                @L.T("Ganzes Haus laden", "Load a whole house")
+                <InputFile accept=".nhph,.nhph2" OnChange="LoadHouse" />
+            </label>
+            <button @onclick="() => houseFlags = house.EventFlags.ToArray()">@L.T("Haus-Flags", "House flags")</button>
+        </div>
+        @if (fileMessage is not null)
+        {
+            <p class="hint">@fileMessage</p>
+        }
+        <p class="hint">@L.T("Ein Haus aus einer Datei bringt alle Räume, die Einrichtung und das Äußere mit, wie in NHSE.",
+                             "A house from a file brings all rooms, the furniture and the outside along, like NHSE.")</p>
+    </section>
+}
+
+@if (houseFlags is { } hf)
+{
+    <FlagListDialog Title="@L.T("Haus-Flags", "House flags")" Count="@hf.Length" Get="i => hf[i]" Set="(i, v) => hf[i] = (short)v"
+                    Describe="FlagNames.House" FileName="EventFlagHouse" Changed="() => { hf.AsSpan().CopyTo(house!.EventFlags); StoreHouse(); }" Closed="() => houseFlags = null" />
+}
 
 @if (picking)
 {
@@ -96,8 +140,80 @@
     private string? message;
     private int loadedFor = -1;
 
+    private string? fileMessage;
+    private short[]? houseFlags;
+
     private MainSave Main => Session.Save!.Main;
     private LayerRoomItem Layer => manager!.Layers[(int)layer];
+
+    private void StoreHouse()
+    {
+        Main.SetPlayerHouse(house!, Index);
+        Session.MarkDirty();
+    }
+
+    private void SetSurfaces(GSaveRoomFloorWall value)
+    {
+        if (manager?.Room is not PlayerRoom1 r)
+            return;
+        r.RoomFloorWall = value;
+        Store();
+    }
+
+    private string HouseName => Files.Safe($"{Player.Personal.PlayerName} house");
+
+    private Task SaveHouse() => Files.Save(Session, $"{HouseName}.{house!.Extension}", house.Write());
+
+    private Task SaveRoom()
+    {
+        manager!.Save();
+        return Files.Save(Session, $"Room {room + 1}.{manager.Room.Extension}", manager.Room.Write());
+    }
+
+    // like NHSE: older and newer house files are converted to this save's size, the household stays
+    private async Task LoadHouse(InputFileChangeEventArgs e)
+    {
+        var expect = Main.Offsets.PlayerHouseSize;
+        var data = await Files.Read(e.File, 4 * 1024 * 1024);
+        if (data is null || !PlayerHouseConverter.IsCompatible(data.Length, expect))
+        {
+            fileMessage = IslandMap.SizeError((int)e.File.Size, expect);
+            return;
+        }
+        data = PlayerHouseConverter.GetCompatible(data, expect);
+        if (data.Length != expect)
+        {
+            fileMessage = IslandMap.SizeError(data.Length, expect);
+            return;
+        }
+        var loaded = Main.Offsets.ReadPlayerHouse(data);
+        loaded.NPC1 = house!.NPC1;
+        house = loaded;
+        StoreHouse();
+        SetRoom(room);
+        fileMessage = L.T("Haus geladen.", "Loaded the house.");
+    }
+
+    private async Task LoadRoom(InputFileChangeEventArgs e)
+    {
+        var expect = Main.Offsets.PlayerRoomSize;
+        var data = await Files.Read(e.File, 1024 * 1024);
+        if (data is null || !PlayerRoomConverter.IsCompatible(data.Length, expect))
+        {
+            message = IslandMap.SizeError((int)e.File.Size, expect);
+            return;
+        }
+        data = PlayerRoomConverter.GetCompatible(data, expect);
+        if (data.Length != expect)
+        {
+            message = IslandMap.SizeError(data.Length, expect);
+            return;
+        }
+        house!.SetRoom(room, Main.Offsets.ReadPlayerRoom(data));
+        StoreHouse();
+        SetRoom(room);
+        message = L.T("Raum geladen.", "Loaded the room.");
+    }
 
     protected override async Task OnParametersSetAsync()
     {

@@ -19,7 +19,9 @@
             <button class="@(mode == Mode.Erase ? "active" : "")" @onclick="() => SetMode(Mode.Erase)">@L.T("Entfernen", "Remove")</button>
             <button class="@(mode == Mode.Area ? "active" : "")" @onclick="() => SetMode(Mode.Area)">@L.T("Bereich", "Area")</button>
             <button class="@(mode == Mode.Paths ? "active" : "")" @onclick="() => SetMode(Mode.Paths)">@L.T("Wege", "Paths")</button>
+            <button class="@(mode == Mode.Terrain ? "active" : "")" @onclick="() => SetMode(Mode.Terrain)">@L.T("Gelände", "Terrain")</button>
             <button class="@(mode == Mode.Bridges ? "active" : "")" @onclick="() => SetMode(Mode.Bridges)">@L.T("Brücken", "Bridges")</button>
+            <button class="@(mode == Mode.Buildings ? "active" : "")" @onclick="() => SetMode(Mode.Buildings)">@L.T("Bauwerke", "Structures")</button>
         </div>
         <div class="segmented">
             <button class="@(across == 16 ? "active" : "")" @onclick="() => Zoom(16)">@L.T("Nah", "Close")</button>
@@ -75,6 +77,7 @@
                         title="@(brush is null ? L.T("Wähle zuerst unter „Setzen“ etwas aus.", "Choose something under \"Place\" first.") : FieldItems.Name(brush))">
                     @L.T("Füllen", "Fill")@(brush is null ? "" : $": {FieldItems.Name(brush)}")
                 </button>
+                <button class="small" @onclick="() => bulkDrop = true">@L.T("Viele hinlegen", "Drop many")</button>
                 <button class="small" @onclick="() => PathArea(pathType)">@L.T("Weg legen", "Lay path"): @RoadShapes.TypeName(pathType)</button>
                 <button class="small" @onclick="() => PathArea(null)">@L.T("Wege entfernen", "Remove paths")</button>
                 break;
@@ -98,6 +101,20 @@
                     </button>
                 </div>
                 <BrushSize Value="@size" ValueChanged="SetSize" />
+                break;
+
+            case Mode.Terrain:
+                <div class="path-types">
+                    @foreach (var f in Landforms)
+                    {
+                        var form = f;
+                        <button class="path-type @(landform == form.Kind ? "active" : "")" @onclick="() => SetLandform(form.Kind)">
+                            <span class="swatch" style="background: @form.Color"></span>@L.T(form.De, form.En)
+                        </button>
+                    }
+                </div>
+                <BrushSize Value="@size" ValueChanged="SetSize" />
+                <button class="small @(map?.RoundCorners == false ? "active" : "")" @onclick="ToggleCorners">@(map?.RoundCorners == false ? L.T("Eckige Ecken", "Angular corners") : L.T("Runde Ecken", "Round corners"))</button>
                 break;
 
             case Mode.Bridges:
@@ -126,6 +143,55 @@
                 {
                     <button class="small" @onclick="() => { selectedBridge = null; DrawView(); }">@L.T("Neue Brücke", "New bridge")</button>
                     <button class="small danger" @onclick="RemoveBridge">@L.T("Brücke abreißen", "Remove bridge")</button>
+                }
+                break;
+
+            case Mode.Buildings:
+                @if (selectedBuilding is { } bld)
+                {
+                    <div class="brush-text">
+                        <strong>@IslandMap.BuildingName(bld)</strong>
+                        <span class="hint">@(movingBuilding ? L.T("Tippe dorthin, wo die Mitte hin soll.", "Tap where the middle should go.") : L.T($"Mitte bei Feld {bld.X}, {bld.Y}", $"Middle at tile {bld.X}, {bld.Y}"))</span>
+                    </div>
+                    @if (bld.BuildingType != BuildingType.Bridge)
+                    {
+                        <div class="stepper">
+                            <button @onclick="() => MoveBuilding(-1, 0)" aria-label="@L.T("Nach links", "Left")">&#x25C0;</button>
+                            <button @onclick="() => MoveBuilding(0, -1)" aria-label="@L.T("Nach oben", "Up")">&#x25B2;</button>
+                            <button @onclick="() => MoveBuilding(0, 1)" aria-label="@L.T("Nach unten", "Down")">&#x25BC;</button>
+                            <button @onclick="() => MoveBuilding(1, 0)" aria-label="@L.T("Nach rechts", "Right")">&#x25B6;</button>
+                        </div>
+                        <button class="small @(movingBuilding ? "active" : "")" @onclick="() => movingBuilding = !movingBuilding">@L.T("Per Tippen versetzen", "Move by tapping")</button>
+                    }
+                    @if (bld.BuildingType == BuildingType.Incline)
+                    {
+                        <div class="path-types">
+                            @foreach (var st in IslandMap.SlopeStyles)
+                            {
+                                var style = st;
+                                <button class="path-type @((SlopeType)bld.Type == style ? "active" : "")" @onclick="() => SetSlope(style)">@IslandMap.SlopeName(style)</button>
+                            }
+                        </div>
+                        <button class="small" @onclick="FlipIncline">&#x21C5; @L.T("Umdrehen", "Flip")</button>
+                    }
+                    @if (bld.BuildingType is BuildingType.Bridge or BuildingType.Incline)
+                    {
+                        <button class="small danger" @onclick="RemoveBuilding">@L.T("Abreißen", "Remove")</button>
+                    }
+                    <button class="small" @onclick="DeselectBuilding">@L.T("Fertig", "Done")</button>
+                }
+                else
+                {
+                    <span class="hint grow">@L.T($"Tippe auf ein Gebäude, eine Brücke oder eine Rampe, um es zu verschieben oder zu ändern. Für eine neue Rampe wähle einen Stil und tippe auf flachen Boden direkt vor einer Klippe, {inclineCount} von {IslandMap.MaxInclines} Rampen sind gebaut.",
+                                                 $"Tap a building, bridge or incline to move or change it. For a new incline pick a style and tap flat ground right in front of a cliff, {inclineCount} of {IslandMap.MaxInclines} inclines are built.")</span>
+                    <div class="path-types">
+                        <button class="path-type @(newIncline is null ? "active" : "")" @onclick="() => newIncline = null">@L.T("Nur auswählen", "Select only")</button>
+                        @foreach (var st in IslandMap.SlopeStyles)
+                        {
+                            var style = st;
+                            <button class="path-type @(newIncline == style ? "active" : "")" @onclick="() => newIncline = style">@IslandMap.SlopeName(style)</button>
+                        }
+                    </div>
                 }
                 break;
 
@@ -195,9 +261,58 @@
     {
         <p class="hint center">@message</p>
     }
-    <p class="hint">@L.T("Stell nichts ins Wasser, auf Klippen oder in Gebäude, das mag das Spiel nicht. Wege suchen sich ihre Ränder selbst. Klippen, Flüsse, Rampen und Gebäude lassen sich hier nicht verändern, Brücken schon.",
-                         "Do not put anything into water, on cliffs or into buildings, the game does not like that. Paths pick their edges by themselves. Cliffs, rivers, inclines and buildings cannot be changed here, bridges can.")</p>
+    @if (mode == Mode.Look && map is not null && selected is { } ds && Ground.GetTile(ds.RelX, ds.RelY) is { IsNone: false } dt)
+    {
+        <ItemDetails Value="dt" ValueChanged="SetDetails" />
+    }
+    @if (mode == Mode.Buildings)
+    {
+        <details class="raw-values">
+            <summary>@L.T("Rohwerte wie in NHSE", "Raw values like NHSE")</summary>
+            @if (selectedBuilding is { } rb)
+            {
+                <div class="raw-grid">
+                    <label>
+                        <span>@L.T("Art", "Kind")</span>
+                        <select @onchange="e => SetRaw(rb, RawField.Kind, e.Value)">
+                            @foreach (var kind in Enum.GetValues<BuildingType>())
+                            {
+                                <option value="@((int)kind)" selected="@(kind == rb.BuildingType)">@kind</option>
+                            }
+                        </select>
+                    </label>
+                    <label><span>X</span><input type="number" value="@rb.X" @onchange="e => SetRaw(rb, RawField.X, e.Value)" /></label>
+                    <label><span>Y</span><input type="number" value="@rb.Y" @onchange="e => SetRaw(rb, RawField.Y, e.Value)" /></label>
+                    <label><span>@L.T("Winkel", "Angle")</span><input type="number" min="0" max="3" value="@rb.Angle" @onchange="e => SetRaw(rb, RawField.Angle, e.Value)" /></label>
+                    <label><span>Bit</span><input type="number" value="@rb.Bit" @onchange="e => SetRaw(rb, RawField.Bit, e.Value)" /></label>
+                    <label><span>@L.T("Typ", "Type")</span><input type="number" value="@rb.Type" @onchange="e => SetRaw(rb, RawField.Type, e.Value)" /></label>
+                    <label><span>TypeArg</span><input type="number" value="@rb.TypeArg" @onchange="e => SetRaw(rb, RawField.TypeArg, e.Value)" /></label>
+                    <label><span>UniqueID</span><input type="number" value="@rb.UniqueID" @onchange="e => SetRaw(rb, RawField.UniqueId, e.Value)" /></label>
+                </div>
+            }
+            else
+            {
+                <div class="raw-grid">
+                    <label><span>@L.T("Platz X (oben links)", "Plaza X (top left)")</span><input type="number" value="@Main.EventPlazaLeftUpX" @onchange="e => SetPlaza(e.Value, true)" /></label>
+                    <label><span>@L.T("Platz Z (oben links)", "Plaza Z (top left)")</span><input type="number" value="@Main.EventPlazaLeftUpZ" @onchange="e => SetPlaza(e.Value, false)" /></label>
+                </div>
+            }
+            <p class="hint">@L.T("Diese Werte schreibt die Seite ohne jede Prüfung in den Spielstand, genau wie NHSE. Die Rampenrichtung ist nicht im Spiel geprüft: zeigt eine Rampe falsch herum, tippe auf Umdrehen.",
+                                 "These values go into the save without any check, just like NHSE. The direction of inclines is not checked in the game: if one points the wrong way, tap Flip.")</p>
+        </details>
+    }
+    @if (map is not null)
+    {
+        <MapFiles Map="map" ViewX="viewX" ViewY="viewY" LayerIndex="layerIndex" Before="BeforeImport" After="AfterImport" Reload="ReloadMap" />
+    }
+    <p class="hint">@L.T("Stell nichts ins Wasser, auf Klippen oder in Gebäude, das mag das Spiel nicht. Wege, Klippen und Flüsse suchen sich ihre Ränder selbst. Strand, Küste und Wasserfälle bleiben, wie sie sind.",
+                         "Do not put anything into water, on cliffs or into buildings, the game does not like that. Paths, cliffs and rivers pick their edges by themselves. Beach, coast and waterfalls stay as they are.")</p>
 </section>
+
+@if (bulkDrop && area is { } room)
+{
+    <BulkDropDialog Player="Player" Brush="brush" Room="@DropRoom(room)" Drop="DropMany" Closed="() => bulkDrop = false" />
+}
 
 @if (picking is Picking.Brush or Picking.Replace or Picking.ReplaceAll)
 {
@@ -211,7 +326,22 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
 }
 
 @code {
-    private enum Mode { Look, Place, Erase, Area, Paths, Bridges }
+    private enum Mode { Look, Place, Erase, Area, Paths, Terrain, Bridges, Buildings }
+
+    private sealed record LandformTool(IslandMap.Landform Kind, string De, string En, string Color);
+
+    private static readonly LandformTool[] Landforms =
+    [
+        new(IslandMap.Landform.Raise, "Klippe bauen", "Build cliff", "#8fbf5a"),
+        new(IslandMap.Landform.Lower, "Klippe abtragen", "Remove cliff", "#c49a6c"),
+        new(IslandMap.Landform.Water, "Fluss graben", "Dig river", "#4fa3d1"),
+        new(IslandMap.Landform.Land, "Fluss zuschütten", "Fill river", "#d9c38c"),
+    ];
+    private enum RawField { Kind, X, Y, Angle, Bit, Type, TypeArg, UniqueId }
+
+    [Parameter] public Player? Player { get; set; }
+
+    private bool bulkDrop;
     private enum Picking { None, Brush, NatureBrush, Replace, ReplaceNature, ReplaceAll, ReplaceAllNature }
     private readonly record struct Spot(int RelX, int RelY);
     private readonly record struct Area(int X, int Y, int W, int H);
@@ -244,6 +374,14 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
     private (int X0, int Y0, int X1, int Y1)? dirtyTerrain;
     private string bridgeStyle = "Log";
     private Building? selectedBridge;
+    private Building? selectedBuilding;
+    private bool movingBuilding;
+    private SlopeType? newIncline;
+    private IslandMap.Landform landform = IslandMap.Landform.Raise;
+    // the level a stroke builds to, taken from the tile it starts on, so dragging makes an even plateau
+    private int? terrainLevel;
+
+    private int inclineCount => map!.Buildings.Count(b => b.BuildingType == BuildingType.Incline);
 
     private int bridgeCount => map!.Buildings.Count(b => b.BuildingType == BuildingType.Bridge);
 
@@ -281,7 +419,8 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
             var (x, y, w, h) = IslandMap.Footprint(b);
             var color = b.BuildingType switch
             {
-                BuildingType.Bridge => ReferenceEquals(b, selectedBridge) ? "rgba(47, 169, 161, 0.9)" : "rgba(160, 110, 60, 0.9)",
+                _ when ReferenceEquals(b, selectedBridge) || ReferenceEquals(b, selectedBuilding) => "rgba(47, 169, 161, 0.9)",
+                BuildingType.Bridge => "rgba(160, 110, 60, 0.9)",
                 BuildingType.Incline => "rgba(196, 154, 108, 0.9)",
                 _ => "rgba(242, 193, 78, 0.85)",
             };
@@ -318,6 +457,11 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
         {
             selection = [a.X, a.Y, a.W, a.H];
         }
+        else if (mode == Mode.Buildings && selectedBuilding is { } sb)
+        {
+            var (bx, by, bw, bh) = IslandMap.Footprint(sb);
+            selection = [bx, by, bw, bh];
+        }
         else if (mode == Mode.Bridges && selectedBridge is { } b)
         {
             var (bx, by, bw, bh) = IslandMap.Footprint(b);
@@ -331,7 +475,7 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
             selection = [x, y, w, h];
         }
 
-        var tool = mode switch { Mode.Look or Mode.Bridges => "look", Mode.Area => "area", _ => "paint" };
+        var tool = mode switch { Mode.Look or Mode.Bridges or Mode.Buildings => "look", Mode.Area => "area", _ => "paint" };
         return module.InvokeVoidAsync("setView", viewX, viewY, across, tiles, selection, Cursor(), tool).AsTask();
     }
 
@@ -351,6 +495,8 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
                 return size == 1 ? [1, 1, false, null!, Remove, 0] : [side, side, true, null!, Remove, back];
             case Mode.Paths:
                 return [side, side, true, null!, pathEraser ? Remove : RoadShapes.TypeColor(pathType), back];
+            case Mode.Terrain:
+                return [side, side, true, null!, Landforms.First(f => f.Kind == landform).Color, back];
             default:
                 return null;
         }
@@ -419,8 +565,12 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
             case Mode.Bridges:
                 await TapBridge(x, y);
                 break;
+            case Mode.Buildings:
+                await TapBuilding(x, y);
+                break;
             default:
                 var before = map!.Snapshot();
+                terrainLevel = null;
                 if (PaintAt(x, y, single: true))
                 {
                     Push(before);
@@ -441,6 +591,7 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
             message = null;
             strokeStart = map!.Snapshot();
             strokeChanged = false;
+            terrainLevel = null;
         }
         if (strokeStart is null)
             return;
@@ -483,6 +634,12 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
                     return false;
                 }
                 return Place(Ground, new Item(brush.RawValue), relX, relY, single);
+            case Mode.Terrain:
+                var (gx, gy, gside) = Square(x, y);
+                var why = ShapeLand(x, y, gx, gy, gside);
+                if (why is not null && single)
+                    message = why;
+                return why is null;
             case Mode.Paths:
                 var (tx, ty, tside) = Square(x, y);
                 var count = LayPath(tx, ty, tside, tside, pathEraser ? null : pathType);
@@ -636,6 +793,59 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
         return count;
     }
 
+    // one dab of the terrain tool on a square of terrain tiles; returns why nothing changed, or null
+    private string? ShapeLand(int x, int y, int ax, int ay, int side)
+    {
+        if (!map!.TryGetTerrain(x, y, out var cx, out var cy))
+            return L.T("Dort ist kein Land.", "There is no land there.");
+        var e = map.Terrain.GetTile(cx, cy).Elevation;
+        terrainLevel ??= landform switch
+        {
+            IslandMap.Landform.Raise => e + 1,
+            IslandMap.Landform.Lower => e - 1,
+            _ => e,
+        };
+        string? reason = null;
+        int count = 0;
+        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+        for (int ty = ay & ~1; ty < ay + side; ty += 2)
+        {
+            for (int tx = ax & ~1; tx < ax + side; tx += 2)
+            {
+                if (!map.TryGetTerrain(tx, ty, out var relX, out var relY))
+                    continue;
+                var r = map.ChangeLand(relX, relY, landform, terrainLevel.Value);
+                if (r is not null)
+                {
+                    if (r.Length > 0)
+                        reason ??= r;
+                    continue;
+                }
+                count++;
+                minX = Math.Min(minX, relX);
+                minY = Math.Min(minY, relY);
+                maxX = Math.Max(maxX, relX);
+                maxY = Math.Max(maxY, relY);
+            }
+        }
+        if (count == 0)
+            return reason ?? L.T("Hier gibt es nichts zu ändern.", "There is nothing to change here.");
+        map.ShapeTerrain(minX, minY, maxX, maxY);
+        // cliffs and rivers reshape the ring around the change, and paths the ring around that
+        dirtyTerrain = dirtyTerrain is { } d
+            ? (Math.Min(d.X0, minX - 3), Math.Min(d.Y0, minY - 3), Math.Max(d.X1, maxX + 3), Math.Max(d.Y1, maxY + 3))
+            : (minX - 3, minY - 3, maxX + 3, maxY + 3);
+        return null;
+    }
+
+    private async Task SetLandform(IslandMap.Landform value)
+    {
+        landform = value;
+        await DrawView();
+    }
+
+    private void ToggleCorners() => map!.RoundCorners = !map.RoundCorners;
+
     private async Task FlushTerrain()
     {
         if (dirtyTerrain is not { } d)
@@ -669,6 +879,54 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
         ? Apply(() => EraseArea(a.X, a.Y, a.W, a.H, IsWeed),
             n => L.T($"{n} mal Unkraut entfernt.", $"Removed {n} weeds."), L.T("Im Bereich wächst kein Unkraut.", "No weeds grow in the area."))
         : Task.CompletedTask;
+
+    // dropped items lie one per terrain tile, on the even item tiles like NHSE's bulk spawn
+    private IEnumerable<(int RelX, int RelY)> DropSpots(Area a)
+    {
+        for (int ay = (a.Y + 1) & ~1; ay < a.Y + a.H; ay += 2)
+        {
+            for (int ax = (a.X + 1) & ~1; ax < a.X + a.W; ax += 2)
+            {
+                if (map!.TryGetRelative(ax, ay, out var relX, out var relY) && Ground.GetTile(relX, relY).IsNone
+                    && map.TryGetTerrain(ax, ay, out var tx, out var ty) && map.Terrain.GetTile(tx, ty).UnitModel is var m
+                    && !m.IsRiver && !m.IsFall && map.BuildingAt(ax, ay) is null)
+                    yield return (relX, relY);
+            }
+        }
+    }
+
+    private int DropRoom(Area a) => DropSpots(a).Count();
+
+    private async Task DropMany(IReadOnlyList<Item> items)
+    {
+        bulkDrop = false;
+        if (area is not { } a)
+            return;
+        var before = map!.Snapshot();
+        int count = 0;
+        using var next = items.GetEnumerator();
+        foreach (var (relX, relY) in DropSpots(a).ToList())
+        {
+            if (!next.MoveNext())
+                break;
+            var item = new Item(next.Current.RawValue) { IsDropped = true };
+            if (Ground.IsOccupied(item, relX, relY) != PlacedItemPermission.NoCollision)
+                continue;
+            Ground.GetTile(relX, relY).CopyFrom(item);
+            count++;
+        }
+        if (count == 0)
+        {
+            message = L.T("Im Bereich ist kein freier Platz.", "There is no free room in the area.");
+            return;
+        }
+        Push(before);
+        message = count < items.Count
+            ? L.T($"{count} von {items.Count} hingelegt, für den Rest war kein Platz mehr.", $"Dropped {count} of {items.Count}, the rest did not fit.")
+            : L.T($"{count} Gegenstände hingelegt.", $"Dropped {count} items.");
+        await Changed();
+        await DrawView();
+    }
 
     private Task FillArea() => area is { } a && brush is not null
         ? Apply(() => FillGrid(a.X, a.Y, a.W, a.H, brush),
@@ -853,6 +1111,147 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
         await Changed();
     }
 
+    // ---- buildings and inclines ----
+
+    private async Task TapBuilding(int x, int y)
+    {
+        if (movingBuilding && selectedBuilding is { } moving)
+        {
+            // keep the middle on the same half tile, so the building stays on the terrain grid
+            await PlaceBuilding(moving, x - ((x - moving.X) & 1), y - ((y - moving.Y) & 1));
+            return;
+        }
+        if (map!.BuildingAt(x, y) is { } found)
+        {
+            selectedBuilding = found;
+            await DrawItems();
+            return;
+        }
+        selectedBuilding = null;
+        if (newIncline is not { } style)
+        {
+            await DrawItems();
+            return;
+        }
+        var error = map.PlanIncline(x, y, style, out var plan);
+        if (error is not null)
+        {
+            message = error;
+            await DrawItems();
+            return;
+        }
+        var before = map.Snapshot();
+        if (!map.AddBuilding(plan))
+        {
+            message = L.T("Auf der Insel ist kein Platz mehr für ein weiteres Bauwerk.", "The island has no room left for another structure.");
+            return;
+        }
+        Push(before);
+        selectedBuilding = map.Buildings.First(b => b.X == plan.X && b.Y == plan.Y && b.BuildingType == BuildingType.Incline);
+        message = L.T($"{IslandMap.SlopeName(style)} gesetzt. Prüf im Spiel, ob sie richtig herum steht.", $"Placed a {IslandMap.SlopeName(style)}. Check in the game that it points the right way.");
+        await Changed();
+    }
+
+    private async Task PlaceBuilding(Building building, int x, int y)
+    {
+        message = map!.CheckMove(building, x, y);
+        if (message is not null)
+            return;
+        Push(map.Snapshot());
+        building.X = (ushort)x;
+        building.Y = (ushort)y;
+        movingBuilding = false;
+        await Changed();
+        await DrawView();
+    }
+
+    // one terrain tile per step
+    private Task MoveBuilding(int dx, int dy) =>
+        selectedBuilding is { } b ? PlaceBuilding(b, b.X + (dx * 2), b.Y + (dy * 2)) : Task.CompletedTask;
+
+    private async Task SetSlope(SlopeType style)
+    {
+        if (selectedBuilding is not { } b)
+            return;
+        Push(map!.Snapshot());
+        b.Type = (ushort)style;
+        await Changed();
+    }
+
+    private async Task FlipIncline()
+    {
+        if (selectedBuilding is not { } b)
+            return;
+        Push(map!.Snapshot());
+        b.Angle = (byte)(b.Angle ^ 2);
+        message = L.T("Umgedreht.", "Flipped.");
+        await Changed();
+    }
+
+    private async Task RemoveBuilding()
+    {
+        if (selectedBuilding is not { } b)
+            return;
+        Push(map!.Snapshot());
+        b.Clear();
+        selectedBuilding = null;
+        message = L.T("Abgerissen.", "Removed.");
+        await Changed();
+        await DrawView();
+    }
+
+    private async Task DeselectBuilding()
+    {
+        selectedBuilding = null;
+        movingBuilding = false;
+        await DrawItems();
+        await DrawView();
+    }
+
+    private async Task SetRaw(Building b, RawField field, object? value)
+    {
+        if (!long.TryParse(value?.ToString(), out var v))
+            return;
+        Push(map!.Snapshot());
+        switch (field)
+        {
+            case RawField.Kind: b.BuildingType = (BuildingType)v; break;
+            case RawField.X: b.X = (ushort)Math.Clamp(v, 0, ushort.MaxValue); break;
+            case RawField.Y: b.Y = (ushort)Math.Clamp(v, 0, ushort.MaxValue); break;
+            case RawField.Angle: b.Angle = (byte)Math.Clamp(v, 0, 3); break;
+            case RawField.Bit: b.Bit = (sbyte)Math.Clamp(v, sbyte.MinValue, sbyte.MaxValue); break;
+            case RawField.Type: b.Type = (ushort)Math.Clamp(v, 0, ushort.MaxValue); break;
+            case RawField.TypeArg: b.TypeArg = (byte)Math.Clamp(v, 0, byte.MaxValue); break;
+            case RawField.UniqueId: b.UniqueID = (ushort)Math.Clamp(v, 0, ushort.MaxValue); break;
+        }
+        if (b.BuildingType == 0)
+            selectedBuilding = null;
+        await Changed();
+        await DrawView();
+    }
+
+    private void SetPlaza(object? value, bool x)
+    {
+        if (!uint.TryParse(value?.ToString(), out var v))
+            return;
+        if (x)
+            Main.EventPlazaLeftUpX = v;
+        else
+            Main.EventPlazaLeftUpZ = v;
+        Session.MarkDirty();
+    }
+
+    // genes, wrapping and raw values of the selected item, straight on the map
+    private async Task SetDetails(Item item)
+    {
+        if (selected is not { } spot)
+            return;
+        Push(map!.Snapshot());
+        Ground.GetTile(spot.RelX, spot.RelY).CopyFrom(item);
+        await Changed();
+        await DrawView();
+    }
+
     private async Task RemoveSelected()
     {
         if (selected is not { } spot)
@@ -876,6 +1275,8 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
         mode = value;
         message = null;
         selectedBridge = null;
+        selectedBuilding = null;
+        movingBuilding = false;
         await DrawItems();
         await DrawView();
     }
@@ -902,6 +1303,27 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
         await DrawView();
     }
 
+    private void BeforeImport() => Push(map!.Snapshot());
+
+    private async Task AfterImport()
+    {
+        selected = null;
+        selectedBridge = null;
+        selectedBuilding = null;
+        await Changed();
+        if (module is not null)
+            await module.InvokeVoidAsync("patchTerrain", 0, 0, map!.Width, map.Height, map.TerrainPixels());
+        await DrawView();
+    }
+
+    // item flags and the island shape live in main.dat itself: read the whole map again
+    private async Task ReloadMap()
+    {
+        map = new IslandMap(Main);
+        undo.Clear();
+        await AfterImport();
+    }
+
     private void Push(IslandMap.State state)
     {
         undo.AddFirst(state);
@@ -917,6 +1339,8 @@ else if (picking is Picking.NatureBrush or Picking.ReplaceNature or Picking.Repl
         map!.Restore(last.Value);
         message = null;
         selectedBridge = null;
+        selectedBuilding = null;
+        movingBuilding = false;
         await Changed();
         if (module is not null)
             await module.InvokeVoidAsync("patchTerrain", 0, 0, map.Width, map.Height, map.TerrainPixels());

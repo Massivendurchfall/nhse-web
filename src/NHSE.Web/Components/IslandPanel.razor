@@ -45,9 +45,32 @@
         <p class="hint">@L.T("Gilt für den Boden der ganzen Insel. Bäume, Steine und aufgestellte Möbel bleiben stehen.",
                              "Applies to the ground of the whole island. Trees, rocks and placed furniture stay.")</p>
     </section>
+
+    <section class="card unlock">
+        <img src="menuicon/Axe.png" alt="" />
+        <h3>@L.T("Ganze Insel abräumen", "Clear the whole island")</h3>
+        <ul class="chores">
+            @foreach (var c in Clearings)
+            {
+                var clearing = c;
+                var count = clearCounts.GetValueOrDefault(clearing.Key);
+                <li>
+                    <img src="menuicon/@(clearing.Icon).png" alt="" />
+                    <span>@L.T(clearing.De, clearing.En)</span>
+                    <span class="pill">@count</span>
+                    <button class="small @(clearing.Risky ? "danger" : "")" disabled="@(count == 0)" @onclick="() => Clear(clearing)">
+                        @(confirm == clearing.Key ? L.T("Wirklich?", "Really?") : L.T("Entfernen", "Remove"))
+                    </button>
+                </li>
+            }
+        </ul>
+        <p class="hint">@L.T("Wie in NHSE für die ganze Insel auf einmal. Abgelegte Gegenstände und Alles gelten auch für Dinge auf Möbeln und fragen noch einmal nach. Rückgängig geht hier nicht, aber solange du nicht speicherst, bleibt dein Spielstand, wie er war.",
+                             "Like NHSE, for the whole island at once. Dropped items and Everything also cover things on furniture and ask once more. There is no undo here, but nothing changes in your save until you save.")</p>
+    </section>
 </div>
 
 <MuseumDetails Changed="CountMuseum" />
+<BulletinBoard />
 <IslandBasics />
 
 <section class="card">
@@ -80,6 +103,21 @@
 <IslandVisitors />
 <RecycleBin />
 
+<section class="card">
+    <header class="card-head">
+        <h3>@L.T("Flags wie in NHSE", "Flags like NHSE")</h3>
+        <button class="small" @onclick="OpenLandFlags">@L.T("Insel-Flags", "Island flags")</button>
+    </header>
+    <p class="hint">@L.T("Zähler und Schalter, mit denen das Spiel festhält, was auf der Insel schon passiert ist. Nur ändern, wenn du weißt, was ein Flag tut.",
+                         "Counters and switches the game uses to remember what already happened on the island. Only change one if you know what it does.")</p>
+</section>
+
+@if (landFlags is not null)
+{
+    <FlagListDialog Title="@L.T("Insel-Flags", "Island flags")" Count="@landFlags.Length" Get="i => landFlags[i]" Set="(i, v) => landFlags[i] = (short)v"
+                    Describe="FlagNames.Land" FileName="EventFlagLand" Changed="StoreLandFlags" Closed="() => landFlags = null" />
+}
+
 @code {
     private record Day(string De, string En,
         Func<TurnipStonk, uint> GetAm, Action<TurnipStonk, uint> SetAm,
@@ -103,7 +141,40 @@
     private int branches;
     private int dryFlowers;
 
+    private sealed record Clearing(string Key, string Icon, string De, string En, bool Risky, bool BothLayers, Func<Item, bool> Match);
+
+    private static readonly HashSet<ushort> Shells = [.. GameLists.Shells];
+
+    private static bool IsKind(Item item, Func<FieldItemKind, bool> kind) =>
+        FieldItemList.Items.TryGetValue(item.DisplayItemId, out var def) && kind(def.Kind);
+
+    // NHSE's remove menu of the field item editor; criteria use DisplayItemId so a big item goes with all its tiles
+    private static readonly Clearing[] Clearings =
+    [
+        new("trees", "PltConifer", "Bäume", "Trees", false, false, t => IsKind(t, k => k.IsTree)),
+        new("bushes", "PltAzaleaPink", "Büsche", "Bushes", false, false, t => IsKind(t, k => k.IsBush)),
+        new("flowers", "PltRose0", "Blumen", "Flowers", false, false, t => IsKind(t, k => k.IsFlower)),
+        new("fences", "Fence", "Zäune", "Fences", false, false, t => IsKind(t, k => k.IsFence)),
+        new("rocks", "OreStone", "Steine", "Rocks", false, false, t => IsKind(t, k => k.IsStone)),
+        new("shells", "Shell1", "Muscheln", "Shells", false, false, t => Shells.Contains(t.DisplayItemId)),
+        new("placed", "Cardboard", "Abgelegte Gegenstände und Möbel", "Dropped items and furniture", true, true, t => !t.IsNone && !FieldItemList.Items.ContainsKey(t.DisplayItemId)),
+        new("all", "Duster", "Alles", "Everything", true, true, t => !t.IsNone),
+    ];
+
+    private readonly Dictionary<string, int> clearCounts = [];
+    private string? confirm;
+
     private MainSave Main => Session.Save!.Main;
+
+    private short[]? landFlags;
+
+    private void OpenLandFlags() => landFlags = Main.EventFlagLand.ToArray();
+
+    private void StoreLandFlags()
+    {
+        landFlags.AsSpan().CopyTo(Main.EventFlagLand);
+        Session.MarkDirty();
+    }
 
     protected override void OnInitialized()
     {
@@ -185,6 +256,8 @@
 
     private LayerFieldItem Ground() => new(Main.GetFieldItemLayer0(), Main.FieldItemAcreWidth, Main.FieldItemAcreHeight);
 
+    private LayerFieldItem OnFurniture() => new(Main.GetFieldItemLayer1(), Main.FieldItemAcreWidth, Main.FieldItemAcreHeight);
+
     private void CountField()
     {
         var kinds = FieldItemList.Items;
@@ -202,6 +275,35 @@
             else if (def.Kind.IsFlower && tile.IsRoot && !tile.IsWatered)
                 dryFlowers++;
         }
+
+        var ground = Ground().Tiles;
+        var upper = OnFurniture().Tiles;
+        foreach (var c in Clearings)
+        {
+            clearCounts[c.Key] = ground.Count(t => t.IsRoot && c.Match(t))
+                + (c.BothLayers ? upper.Count(t => t.IsRoot && c.Match(t)) : 0);
+        }
+    }
+
+    private void Clear(Clearing clearing)
+    {
+        if (clearing.Risky && confirm != clearing.Key)
+        {
+            confirm = clearing.Key;
+            return;
+        }
+        confirm = null;
+        var ground = Ground();
+        ground.RemoveAll(0, 0, ground.TileInfo.TotalWidth, ground.TileInfo.TotalHeight, clearing.Match);
+        Main.SetFieldItemLayer0(ground.Tiles);
+        if (clearing.BothLayers)
+        {
+            var upper = OnFurniture();
+            upper.RemoveAll(0, 0, upper.TileInfo.TotalWidth, upper.TileInfo.TotalHeight, clearing.Match);
+            Main.SetFieldItemLayer1(upper.Tiles);
+        }
+        Session.MarkDirty();
+        CountField();
     }
 
     private void Tidy(Func<LayerFieldItem, int> action)

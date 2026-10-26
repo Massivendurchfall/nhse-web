@@ -95,8 +95,12 @@ public sealed class SaveSession(IJSRuntime js)
             Check<GSaveVisitorNpc>(Save.Main.Data[Save.Main.Offsets.Visitor..], Save.Main.Visitor.ToBytesClass()),
             Save.Main.GetVillager(0) is Villager2 v2
                 ? Check<VillagerItem>(v2.Data[0x1094c..], VillagerItem.SetArray(v2.WearStockList)) + " " +
-                  Check<GSavePlayerId>(v2.GetMemory(0).Data, v2.GetMemory(0).PlayerId.ToBytes())
-                : "no villager");
+                  Check<GSavePlayerId>(v2.GetMemory(0).Data, v2.GetMemory(0).PlayerId.ToBytes()) + " " +
+                  Check<GSaveRoomFloorWall>(v2.Data[0x12880..], v2.Room.ToBytes())
+                : "no villager",
+            Save.Main.GetPlayerHouse(0).GetRoom(0) is PlayerRoom1 room0
+                ? Check<GSaveRoomFloorWall>(room0.Data[0x65A4..], room0.RoomFloorWall.ToBytes())
+                : "no room");
         var timer = System.Diagnostics.Stopwatch.StartNew();
         Save.Save((uint)DateTime.Now.Ticks);
         var saveMs = timer.ElapsedMilliseconds;

@@ -12,17 +12,34 @@
         @for (int i = 0; i < slots.Count; i++)
         {
             var index = i;
-            <ItemSlot Item="@slots[index]" Number="@(index + 1)" Locked="@(index >= unlocked)" OnClick="() => editing = index" />
+            <ItemSlot Item="@slots[index]" Number="@(index + 1)" Locked="@(!Usable(index))" OnClick="() => editing = index" />
         }
     </div>
-    @if (unlocked < slots.Count)
-    {
-        <div class="buttons">
-            <span class="hint">@L.T("Graue Felder schaltest du im Spiel mit einer Taschenerweiterung frei, oder gleich hier.",
-                                   "Grey slots unlock in the game with a pocket upgrade, or right here.")</span>
-            <button class="small" @onclick="Expand">@L.T($"Auf {slots.Count} Plätze erweitern", $"Expand to {slots.Count} slots")</button>
+    <div class="buttons">
+        <span class="hint">@L.T("Plätze in den Taschen:", "Pocket slots:")</span>
+        <div class="segmented">
+            @foreach (var total in new[] { 20, 30, 40 })
+            {
+                var t = total;
+                <button class="@(unlocked == t && Player.Personal.PocketCount == 20 ? "active" : "")" @onclick="() => SetSlots(20, (uint)(t - 20))">@t</button>
+            }
         </div>
-    }
+    </div>
+    <details class="raw-values">
+        <summary>@L.T("Genau einstellen wie in NHSE", "Set exactly like NHSE")</summary>
+        <div class="raw-grid">
+            <label>
+                <span>@L.T("Taschen (Felder 1 bis 20)", "Pockets (slots 1 to 20)")</span>
+                <input type="number" min="0" max="20" value="@Player.Personal.PocketCount" @onchange="e => SetRaw(e.Value, true)" />
+            </label>
+            <label>
+                <span>@L.T("Erweiterung (Felder 21 bis 40)", "Upgrade (slots 21 to 40)")</span>
+                <input type="number" min="0" max="20" value="@Player.Personal.BagCount" @onchange="e => SetRaw(e.Value, false)" />
+            </label>
+        </div>
+    </details>
+    <p class="hint">@L.T("Im Spiel gibt es 20 Plätze und mit den beiden Erweiterungen 30 und 40. Gegenstände in Feldern, die du wegnimmst, bleiben im Spielstand, sind aber erst wieder da, wenn die Felder zurück sind.",
+                         "The game has 20 slots and 30 and 40 with the two upgrades. Items in slots you take away stay in the save, but only show up again once the slots are back.")</p>
 </section>
 
 @if (editing >= 0)
@@ -40,7 +57,10 @@
     private int editing = -1;
     private Player? loadedFor;
 
-    private int used => slots.Take(unlocked).Count(s => !s.IsNone);
+    private int used => slots.Where((s, i) => Usable(i) && !s.IsNone).Count();
+
+    // the first 20 slots count against PocketCount, the next 20 against BagCount
+    private bool Usable(int index) => index < 20 ? index < Player.Personal.PocketCount : index - 20 < Player.Personal.BagCount;
 
     // Slots 1 to 20 live in Pocket, 21 to 40 in Bag; the counts say how many are usable.
     protected override async Task OnParametersSetAsync()
@@ -69,14 +89,25 @@
         Session.MarkDirty();
     }
 
-    // both pocket upgrades at once: 20 slots in Pocket and 20 in Bag
-    private void Expand()
+    // 20 slots live in Pocket, the upgrades add 10 and then 20 more in Bag
+    private void SetSlots(uint pocket, uint bag)
     {
         var p = Player.Personal;
-        p.PocketCount = 20;
-        p.BagCount = 20;
+        p.PocketCount = Math.Min(pocket, 20);
+        p.BagCount = Math.Min(bag, 20);
         unlocked = (int)Math.Min(slots.Count, p.PocketCount + p.BagCount);
         Session.MarkDirty();
+    }
+
+    private void SetRaw(object? value, bool pocket)
+    {
+        if (!uint.TryParse(value?.ToString(), out var v))
+            return;
+        var p = Player.Personal;
+        if (pocket)
+            SetSlots(v, p.BagCount);
+        else
+            SetSlots(p.PocketCount, v);
     }
 
     private void Put(Item item)

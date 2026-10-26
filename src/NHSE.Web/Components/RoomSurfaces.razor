@@ -1,0 +1,59 @@
+@inject ItemCatalog Catalog
+
+@* Wallpaper, floor and accent wall of a room, as items like the game stores them. *@
+<div class="surfaces">
+    @foreach (var s in Enum.GetValues<Surface>())
+    {
+        var surface = s;
+        <div class="slot-field">
+            <span>@Name(surface)</span>
+            <ItemSlot Item="@Get(surface)" OnClick="() => picking = surface" />
+        </div>
+    }
+</div>
+
+@if (picking is { } p)
+{
+    <ItemPickerDialog Title="@Name(p)" Current="@Get(p)" CanClear="@(!Get(p).IsNone)"
+                      Picked="item => Put(p, item)" Cleared="() => Put(p, new Item())" Closed="() => picking = null" />
+}
+
+@code {
+    private enum Surface { Wall, Floor, Accent }
+
+    [Parameter] public GSaveRoomFloorWall Value { get; set; }
+    [Parameter] public EventCallback<GSaveRoomFloorWall> ValueChanged { get; set; }
+
+    private Surface? picking;
+
+    protected override Task OnInitializedAsync() => Catalog.EnsureLoadedAsync();
+
+    private static string Name(Surface s) => s switch
+    {
+        Surface.Wall => L.T("Tapete", "Wallpaper"),
+        Surface.Floor => L.T("Boden", "Flooring"),
+        _ => L.T("Akzentwand", "Accent wall"),
+    };
+
+    private Item Get(Surface s) => (s switch
+    {
+        Surface.Wall => Value.WallItem,
+        Surface.Floor => Value.FloorItem,
+        _ => Value.AccentWallItem,
+    }).ToItem();
+
+    private async Task Put(Surface s, Item item)
+    {
+        picking = null;
+        var room = Value;
+        var name = new GSaveItemName();
+        name.CopyFrom(item);
+        switch (s)
+        {
+            case Surface.Wall: room.WallItem = name; break;
+            case Surface.Floor: room.FloorItem = name; break;
+            default: room.AccentWallItem = name; break;
+        }
+        await ValueChanged.InvokeAsync(room);
+    }
+}

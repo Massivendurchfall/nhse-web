@@ -1,0 +1,421 @@
+@inject SaveSession Session
+@inject ItemCatalog Catalog
+
+@* The player's mailbox like NHSE's post box editor: read, write, change and delete letters and parcels. *@
+<section class="card">
+    <header class="card-head">
+        <h3 class="with-icon"><img src="menuicon/Post.png" alt="" />@L.T($"Briefkasten von {Player.Personal.PlayerName}", $"{Player.Personal.PlayerName}'s mailbox")</h3>
+        <span class="pill">@L.T($"{slots.Count} von {Slots} Briefen", $"{slots.Count} of {Slots} letters")</span>
+    </header>
+    <p class="hint">@L.T("Tippe auf einen Brief, um ihn zu lesen oder zu ändern. Ein neuer Brief kann einen Gegenstand mitbringen, den du im Spiel aus dem Briefkasten holst.",
+                         "Tap a letter to read or change it. A new letter can bring an item along that you pick up from the mailbox in the game.")</p>
+    <div class="buttons">
+        <button class="primary" disabled="@(slots.Count >= Slots)" @onclick="New">@L.T("Neuer Brief", "New letter")</button>
+        <label class="button">
+            @L.T("Brief aus Datei (.nhpb)", "Letter from a file (.nhpb)")
+            <InputFile accept=".nhpb" OnChange="e => Import(-1, e)" />
+        </label>
+    </div>
+    <ul class="mail-list">
+        @foreach (var i in slots)
+        {
+            var index = i;
+            var item = Box.GetAttachedItem(index);
+            <li>
+                <button class="mail @(Box.GetMailReadStatus(index) ? "" : "unread")" @onclick="() => Open(index)">
+                    @if (item.IsNone)
+                    {
+                        <img src="menuicon/Post.png" alt="" />
+                    }
+                    else
+                    {
+                        <ItemImage Src="@Catalog.PictureOf(item)" Alt="@GameInfo.Strings.GetItemName(item)" />
+                    }
+                    <span class="mail-text">
+                        <strong>@Sender(index)</strong>
+                        <span class="hint">@Preview(index)</span>
+                    </span>
+                    <span class="hint">@((DateTime)Box.GetTimestamp(index) is var d && d != DateTime.MinValue ? d.ToString("d") : "")</span>
+                </button>
+            </li>
+        }
+    </ul>
+    @if (message is not null)
+    {
+        <p class="hint">@message</p>
+    }
+</section>
+
+@if (form is { } f)
+{
+    <div class="dialog-backdrop" @onclick="() => form = null">
+        <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <header class="dialog-head">
+                <h3>@(f.New ? L.T("Neuer Brief", "New letter") : L.T($"Brief in Fach {f.Index + 1}", $"Letter in slot {f.Index + 1}"))</h3>
+                <button class="icon-button" aria-label="@L.T("Schließen", "Close")" @onclick="() => form = null">&#x2715;</button>
+            </header>
+            <div class="dialog-body">
+                <div class="profile-fields">
+                    <label>
+                        <span>@L.T("Absender", "Sender")</span>
+                        <select value="@f.SenderType" @onchange="e => f.SenderType = int.Parse(e.Value!.ToString()!)">
+                            <option value="0">@L.T("Spieler", "Player")</option>
+                            <option value="1">@L.T("Bewohner", "Villager")</option>
+                            <option value="2">NPC</option>
+                        </select>
+                    </label>
+                    @switch (f.SenderType)
+                    {
+                        case 0:
+                            <label><span>@L.T("Name", "Name")</span><input maxlength="10" value="@f.SenderName" @onchange="e => f.SenderName = e.Value?.ToString() ?? string.Empty" /></label>
+                            break;
+                        case 1:
+                            <label>
+                                <span>@L.T("Bewohner", "Villager")</span>
+                                <select @onchange="e => SetVillager(f, e.Value)">
+                                    @foreach (var (key, name) in VillagerChoices(f))
+                                    {
+                                        <option value="@key" selected="@(key == f.Species * 256 + f.Variant)">@name</option>
+                                    }
+                                </select>
+                            </label>
+                            break;
+                        default:
+                            <label>
+                                <span>NPC</span>
+                                <select @onchange="e => f.Species = int.Parse(e.Value!.ToString()!)">
+                                    @foreach (var (id, npc) in Mail.SenderNPCData)
+                                    {
+                                        <option value="@id" selected="@(id == f.Species)">@GameInfo.Strings.GetVillager(npc.NameConversion)</option>
+                                    }
+                                </select>
+                            </label>
+                            break;
+                    }
+                    <label>
+                        <span>@L.T("Art", "Kind")</span>
+                        <select value="@(f.Letter ? 1 : 0)" @onchange="e => SetLetter(f, e.Value)">
+                            <option value="1">@L.T("Brief", "Letter")</option>
+                            <option value="0">@L.T("Paket", "Parcel")</option>
+                        </select>
+                    </label>
+                    @if (f.Letter)
+                    {
+                        <label>
+                            <span>@L.T("Briefpapier", "Stationery")</span>
+                            <select @onchange="e => f.Stationery = int.Parse(e.Value!.ToString()!)">
+                                @foreach (var (key, skin) in Mail.LetterStationerySkin.OrderBy(k => k.Value.index))
+                                {
+                                    <option value="@key" selected="@(key == f.Stationery)">@GameInfo.Strings.GetMail(skin.name)</option>
+                                }
+                            </select>
+                        </label>
+                    }
+                    <label>
+                        <span>@(f.Letter ? L.T("Geschenkpapier", "Wrapping") : L.T("Karton", "Box"))</span>
+                        <select @onchange="e => f.Wrapping = int.Parse(e.Value!.ToString()!)">
+                            @foreach (var (key, name) in WrappingChoices(f.Letter))
+                            {
+                                <option value="@key" selected="@(key == f.Wrapping)">@name</option>
+                            }
+                        </select>
+                    </label>
+                    <div class="slot-field">
+                        <span>@L.T("Anhang", "Attachment")</span>
+                        <ItemSlot Item="@f.Attachment" OnClick="() => pickingAttachment = true" />
+                    </div>
+                </div>
+
+                @if (f.Letter)
+                {
+                    <div class="letter">
+                        <input maxlength="@Mail.LetterToTextLength" placeholder="@L.T("Anrede", "To line")" value="@f.ToLine" @onchange="e => f.ToLine = e.Value?.ToString() ?? string.Empty" />
+                        <textarea rows="6" maxlength="@Mail.LetterMessageTextLength" placeholder="@L.T("Nachricht", "Message")" @onchange="e => f.Message = e.Value?.ToString() ?? string.Empty">@f.Message</textarea>
+                        <input maxlength="@Mail.LetterFromTextLength" placeholder="@L.T("Gruß", "From line")" value="@f.FromLine" @onchange="e => f.FromLine = e.Value?.ToString() ?? string.Empty" />
+                    </div>
+                }
+
+                <div class="profile-fields">
+                    <label><span>@L.T("Empfänger", "Receiver")</span><input maxlength="10" value="@f.ReceiverName" @onchange="e => f.ReceiverName = e.Value?.ToString() ?? string.Empty" /></label>
+                    <label><span>@L.T("Insel des Empfängers", "Receiver's island")</span><input maxlength="10" value="@f.ReceiverIsland" @onchange="e => f.ReceiverIsland = e.Value?.ToString() ?? string.Empty" /></label>
+                    <label><span>@L.T("Datum", "Date")</span><input type="date" value="@f.Date.ToString("yyyy-MM-dd")" @onchange="e => f.Date = DateTime.TryParse(e.Value?.ToString(), out var d) ? d : f.Date" /></label>
+                    <label class="check"><input type="checkbox" checked="@f.Read" @onchange="e => f.Read = e.Value is true" />@L.T("Gelesen", "Read")</label>
+                    <label class="check"><input type="checkbox" checked="@f.Favourite" @onchange="e => f.Favourite = e.Value is true" />@L.T("Favorit", "Favourite")</label>
+                </div>
+            </div>
+            <footer class="dialog-foot">
+                <div class="foot-buttons">
+                    @if (!f.New)
+                    {
+                        <button class="ghost danger" @onclick="() => Delete(f.Index)">@L.T("Löschen", "Delete")</button>
+                        <button class="small" @onclick="() => Export(f.Index)">@L.T("Als .nhpb sichern", "Save as .nhpb")</button>
+                    }
+                </div>
+                <div class="foot-buttons">
+                    <button class="primary" @onclick="() => Store(f)">@(f.New ? L.T("In den Briefkasten", "Into the mailbox") : L.T("Speichern", "Save"))</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+}
+
+@if (pickingAttachment && form is { } a)
+{
+    <ItemPickerDialog Title="@L.T("Anhang", "Attachment")" Current="@a.Attachment" CanClear="@(!a.Attachment.IsNone)"
+                      Picked="item => { a.Attachment = item; pickingAttachment = false; }"
+                      Cleared="() => { a.Attachment = new Item(); pickingAttachment = false; }"
+                      Closed="() => pickingAttachment = false" />
+}
+
+@code {
+    private const int Slots = Mail.MaxSlots + 1;
+
+    private sealed class MailForm
+    {
+        public int Index;
+        public bool New;
+        public int SenderType;
+        public string SenderName = string.Empty;
+        public int Species;
+        public int Variant;
+        public bool Letter = true;
+        public int Stationery;
+        public int Wrapping;
+        public Item Attachment = new();
+        public string ToLine = string.Empty;
+        public string Message = string.Empty;
+        public string FromLine = string.Empty;
+        public string ReceiverName = string.Empty;
+        public string ReceiverIsland = string.Empty;
+        public DateTime Date = DateTime.Today;
+        public bool Read;
+        public bool Favourite;
+    }
+
+    [Parameter, EditorRequired] public Player Player { get; set; } = null!;
+
+    private List<int> slots = [];
+    private MailForm? form;
+    private bool pickingAttachment;
+    private string? message;
+    private Player? loadedFor;
+
+    private PostBox Box => Player.PostBox;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!ReferenceEquals(loadedFor, Player))
+        {
+            loadedFor = Player;
+            form = null;
+            Load();
+        }
+        await Catalog.EnsureLoadedAsync();
+    }
+
+    private void Load() => slots = Enumerable.Range(0, Slots).Where(Box.GetMailCheck).ToList();
+
+    private string Sender(int index) => Box.GetSenderType(index) switch
+    {
+        0 => Box.GetSenderName(index),
+        1 => GameInfo.Strings.GetVillager(VillagerUtil.GetInternalVillagerName((VillagerSpecies)Box.GetVillagerSenderSpeciesId(index), Box.GetVillagerSenderVariantId(index))),
+        _ => Mail.SenderNPCData.TryGetValue(Box.GetVillagerSenderSpeciesId(index), out var npc) ? GameInfo.Strings.GetVillager(npc.NameConversion) : "NPC",
+    };
+
+    private string Preview(int index)
+    {
+        var text = Box.GetMailType(index) ? Box.GetLetterMessageText(index) : L.T("Paket", "Parcel");
+        var item = Box.GetAttachedItem(index);
+        var line = text.Replace('\n', ' ').Trim();
+        if (line.Length > 70)
+            line = line[..70] + " ...";
+        return item.IsNone ? line : $"{line} ({GameInfo.Strings.GetItemName(item)})";
+    }
+
+    // residents of the island first, the current sender kept even if they moved away
+    private IEnumerable<(int Key, string Name)> VillagerChoices(MailForm f)
+    {
+        var list = Session.Save!.Main.GetVillagers().Where(v => !VillagerCatalog.IsEmpty(v))
+            .Select(v => (v.Species * 256 + v.Variant, GameInfo.Strings.GetVillager(v.InternalName))).ToList();
+        var current = f.Species * 256 + f.Variant;
+        if (!list.Any(v => v.Item1 == current))
+            list.Insert(0, (current, GameInfo.Strings.GetVillager(VillagerUtil.GetInternalVillagerName((VillagerSpecies)f.Species, f.Variant))));
+        return list;
+    }
+
+    private static void SetLetter(MailForm f, object? value)
+    {
+        f.Letter = value?.ToString() == "1";
+        // letters and parcels have their own wrapping lists
+        f.Wrapping = f.Letter ? ItemWrappingExtended.ItemWrappingSkin.Keys.First() : ItemWrappingExtended.ItemBoxSkin.Keys.First();
+    }
+
+    private static void SetVillager(MailForm f, object? value)
+    {
+        if (!int.TryParse(value?.ToString(), out var key))
+            return;
+        f.Species = key / 256;
+        f.Variant = key % 256;
+    }
+
+    private static IEnumerable<(int Key, string Name)> WrappingChoices(bool letter) => letter
+        ? ItemWrappingExtended.ItemWrappingSkin.OrderBy(k => k.Value.index).Select(k => (k.Key, GameInfo.Strings.GetMail(k.Value.name)))
+        : ItemWrappingExtended.ItemBoxSkin.OrderBy(k => k.Value.index).Select(k => (k.Key, GameInfo.Strings.GetMail(k.Value.name)));
+
+    private void New()
+    {
+        message = null;
+        var free = Enumerable.Range(0, Slots).FirstOrDefault(i => !Box.GetMailCheck(i), -1);
+        if (free < 0)
+            return;
+        var p = Player.Personal;
+        form = new MailForm
+        {
+            Index = free,
+            New = true,
+            SenderName = p.PlayerName,
+            ReceiverName = p.PlayerName,
+            ReceiverIsland = p.TownName,
+            ToLine = L.T($"Liebe/r {p.PlayerName},", $"Dear {p.PlayerName},"),
+            FromLine = p.PlayerName,
+            Stationery = Mail.LetterStationerySkin.Keys.First(),
+            Wrapping = ItemWrappingExtended.ItemWrappingSkin.Keys.First(),
+        };
+    }
+
+    private void Open(int index)
+    {
+        message = null;
+        var type = Box.GetSenderType(index);
+        form = new MailForm
+        {
+            Index = index,
+            SenderType = type,
+            SenderName = Box.GetSenderName(index),
+            Species = Box.GetVillagerSenderSpeciesId(index),
+            Variant = Box.GetVillagerSenderVariantId(index),
+            Letter = Box.GetMailType(index),
+            Stationery = Box.GetMailStationerySkin(index),
+            Wrapping = Box.GetItemWrappingType(index),
+            Attachment = Box.GetAttachedItem(index),
+            ToLine = Box.GetLetterToLineText(index),
+            Message = Box.GetLetterMessageText(index),
+            FromLine = Box.GetLetterFromLineText(index),
+            ReceiverName = Box.GetReceiverPlayerName(index),
+            ReceiverIsland = Box.GetReceiverIslandName(index),
+            Date = Box.GetTimestamp(index) is var d && !d.IsEmpty ? d : DateTime.Today,
+            Read = Box.GetMailReadStatus(index),
+            Favourite = Box.GetMailFavStatus(index),
+        };
+    }
+
+    // the same steps as NHSE's save button: slot order, sender, receiver, attachment, text and date
+    private void Store(MailForm f)
+    {
+        var i = f.Index;
+        var p = Player.Personal;
+        if (!Box.GetMailCheck(i) || Box.GetPostBoxSortIndex(i) == 0)
+        {
+            var next = Box.GetLatestUniqueId();
+            Box.SetPostBoxSortIndex(i, (byte)next);
+            Box.SetLatestUniqueId(next + 1);
+        }
+        Box.WipeTxRxSection(i);
+        Box.SetMailReadStatus(i, f.Read);
+        Box.SetMailFavStatus(i, f.Favourite);
+
+        Box.SetSenderType(i, (byte)f.SenderType);
+        switch (f.SenderType)
+        {
+            case 0:
+                Box.SetPlayerSenderIslandId(i, p.TownID);
+                Box.SetPlayerSenderIslandName(i, p.TownName);
+                Box.SetSenderId(i, p.PlayerID);
+                Box.SetSenderName(i, f.SenderName);
+                break;
+            case 1:
+                Box.SetVillagerSenderSpeciesId(i, f.Species);
+                Box.SetVillagerSenderVariantId(i, f.Variant);
+                Box.SetNPCSenderIslandId(i, p.TownID);
+                Box.SetNPCSenderIslandName(i, p.TownName);
+                Box.SetSenderId(i, 0x02);
+                break;
+            default:
+                Box.SetVillagerSenderSpeciesId(i, f.Species);
+                Box.SetVillagerSenderVariantId(i, 0);
+                Box.SetSenderId(i, 0x00);
+                break;
+        }
+
+        Box.SetReceiverPlayerName(i, f.ReceiverName);
+        Box.SetReceiverPlayerId(i, p.PlayerID);
+        Box.SetReceiverIslandName(i, f.ReceiverIsland);
+        Box.SetReceiverIslandId(i, p.TownID);
+
+        Box.SetAttachedItem(i, f.Attachment);
+        Box.SetMailType(i, f.Letter);
+        Box.SetItemWrappingType(i, (byte)f.Wrapping);
+        Box.SetMailStationerySkin(i, f.Letter ? (ushort)f.Stationery : (ushort)0);
+
+        Box.SetMailLanguageString(i, L.T("de-DE", "en-GB"), f.SenderType == 0);
+        Box.SetLetterToLineText(i, f.ToLine.Replace("\r\n", "\n").Replace("\n", ""));
+        Box.SetLetterMessageText(i, f.Message.Replace("\r\n", "\n"));
+        Box.SetLetterFromLineText(i, f.FromLine.Replace("\r\n", "\n").Replace("\n", ""));
+        Box.SetTimeStamp(i, f.Date);
+
+        Session.MarkDirty();
+        form = null;
+        Load();
+        message = L.T("Brief gespeichert.", "Saved the letter.");
+    }
+
+    // an empty slot like NHSE leaves it: no item and no sort index
+    private void Delete(int index)
+    {
+        var empty = new byte[Mail.SIZE];
+        empty[Mail.AttachedItemID] = 0xFE;
+        empty[Mail.AttachedItemID + 1] = 0xFF;
+        empty[Mail.PostBoxSortIndex - 4] = 0xFE;
+        empty[Mail.PostBoxSortIndex - 3] = 0xFF;
+        Box.SetIndividualLetter(index, empty);
+        Session.MarkDirty();
+        form = null;
+        Load();
+        message = L.T("Brief gelöscht.", "Deleted the letter.");
+    }
+
+    private Task Export(int index) =>
+        Files.Save(Session, Files.Safe($"{Player.Personal.PlayerName}_Post_Slot{index}") + ".nhpb", Box.GetIndividualLetter(index).ToArray());
+
+    private async Task Import(int index, InputFileChangeEventArgs e)
+    {
+        var data = await Files.Read(e.File, Mail.SIZE);
+        if (data is null || data.Length != Mail.SIZE)
+        {
+            message = IslandMap.SizeError((int)e.File.Size, Mail.SIZE);
+            return;
+        }
+        if (index < 0)
+            index = Enumerable.Range(0, Slots).FirstOrDefault(i => !Box.GetMailCheck(i), -1);
+        if (index < 0)
+        {
+            message = L.T("Der Briefkasten ist voll.", "The mailbox is full.");
+            return;
+        }
+        var order = Box.GetPostBoxSortIndex(index);
+        Box.SetIndividualLetter(index, data);
+        if (order != 0)
+        {
+            Box.SetPostBoxSortIndex(index, order);
+        }
+        else
+        {
+            var next = Math.Min(Box.GetLatestUniqueId(), Mail.MaxSlots);
+            Box.SetPostBoxSortIndex(index, (byte)next);
+            Box.SetLatestUniqueId(Math.Min(next + 1, Mail.MaxSlots));
+        }
+        Session.MarkDirty();
+        Load();
+        message = L.T("Brief geladen.", "Loaded the letter.");
+    }
+}

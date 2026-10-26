@@ -95,6 +95,12 @@ public sealed class IslandMap(MainSave main)
     /// </summary>
     public static (int X, int Y, int W, int H) Footprint(Building building)
     {
+        if (building.BuildingType == BuildingType.Incline)
+        {
+            return (building.Angle & 1) == 0
+                ? (building.X - 2, building.Y - 4, 4, 8)
+                : (building.X - 4, building.Y - 2, 8, 4);
+        }
         if (building.BuildingType == BuildingType.Bridge && BridgeInfo(building) is { Diagonal: false } info)
         {
             var span = info.Length * 2;
@@ -200,6 +206,213 @@ public sealed class IslandMap(MainSave main)
         return null;
     }
 
+    // ---- buildings and inclines ----
+
+    public const int MaxInclines = 8;
+
+    public static IReadOnlyList<SlopeType> SlopeStyles { get; } =
+    [
+        SlopeType.SlopeNatural, SlopeType.SlopeWoodBlue, SlopeType.SlopeWood, SlopeType.SlopeWoodStair,
+        SlopeType.SlopeStoneStair, SlopeType.SlopeBrickStair, SlopeType.SlopeIronStairBlue, SlopeType.SlopeIronStair,
+    ];
+
+    public static string SlopeName(SlopeType type) => type switch
+    {
+        SlopeType.SlopeNatural => L.T("Natürliche Rampe", "Natural ramp"),
+        SlopeType.SlopeWoodBlue => L.T("Blaue Holzrampe", "Blue plank ramp"),
+        SlopeType.SlopeWood => L.T("Weiße Holzrampe", "White plank ramp"),
+        SlopeType.SlopeWoodStair => L.T("Baumstammtreppe", "Log staircase"),
+        SlopeType.SlopeStoneStair => L.T("Steintreppe", "Stone staircase"),
+        SlopeType.SlopeBrickStair => L.T("Ziegeltreppe", "Brick staircase"),
+        SlopeType.SlopeIronStairBlue => L.T("Blaue Stahltreppe", "Blue steel staircase"),
+        SlopeType.SlopeIronStair => L.T("Rote Stahltreppe", "Red steel staircase"),
+        _ => type.ToString(),
+    };
+
+    public static string BuildingName(Building b) => b.BuildingType switch
+    {
+        >= BuildingType.PlayerHouse1 and <= BuildingType.PlayerHouse8 =>
+            L.T($"Haus von Spieler {b.BuildingType - BuildingType.PlayerHouse1 + 1}", $"House of player {b.BuildingType - BuildingType.PlayerHouse1 + 1}"),
+        >= BuildingType.Villager1 and <= BuildingType.Villager10 =>
+            L.T($"Bewohnerhaus {b.BuildingType - BuildingType.Villager1 + 1}", $"Villager house {b.BuildingType - BuildingType.Villager1 + 1}"),
+        BuildingType.NooksCranny => L.T("Laden von Nepp und Schlepp", "Nook's Cranny"),
+        BuildingType.ResidentCenterStructure => L.T("Rathaus", "Resident Services"),
+        BuildingType.ResidentCenterTent => L.T("Rathauszelt", "Resident Services tent"),
+        BuildingType.Museum => L.T("Museum", "Museum"),
+        BuildingType.Airport => L.T("Flughafen", "Airport"),
+        BuildingType.AblesSisters => L.T("Schneiderei", "Able Sisters"),
+        BuildingType.Campsite => L.T("Campingplatz", "Campsite"),
+        BuildingType.Bridge => BridgeStyleName(BridgeInfo(b).Style),
+        BuildingType.Incline => SlopeName((SlopeType)b.Type),
+        BuildingType.ReddsTreasureTrawler => L.T("Reiners Kutter", "Redd's trawler"),
+        BuildingType.Studio => L.T("Studio", "Studio"),
+        BuildingType.Hotel => L.T("Hotel", "Hotel"),
+        _ => b.BuildingType.ToString(),
+    };
+
+    // Which way an incline climbs at each angle is not documented anywhere; this follows buildings facing
+    // south at angle 0 and turning anticlockwise like the path pieces. Flipping an incline turns it by 180 degrees.
+    private static (int X, int Y) UpDirection(int angle) => (angle & 3) switch
+    {
+        0 => (0, -1),
+        1 => (-1, 0),
+        2 => (0, 1),
+        _ => (1, 0),
+    };
+
+    private bool Overlaps((int X, int Y, int W, int H) area, Building? ignore) => Buildings.Any(o =>
+        o.BuildingType != 0 && !ReferenceEquals(o, ignore) && Footprint(o) is var (ox, oy, ow, oh)
+        && area.X < ox + ow && ox < area.X + area.W && area.Y < oy + oh && oy < area.Y + area.H);
+
+    /// <summary>
+    /// Checks an incline at this position: flat land at the bottom, flat land one level higher at the top,
+    /// only land or cliff in between, no water and no other structure. Returns why it does not fit, or null.
+    /// </summary>
+    public string? CheckIncline(int x, int y, int angle, Building? ignore = null)
+    {
+        var probe = new Building { BuildingType = BuildingType.Incline, X = (ushort)x, Y = (ushort)y, Angle = (byte)angle };
+        var (fx, fy, fw, fh) = Footprint(probe);
+        var (ux, uy) = UpDirection(angle);
+        int? low = null;
+        var cliff = false;
+        for (int ix = fx; ix < fx + fw; ix += 2)
+        {
+            for (int iy = fy; iy < fy + fh; iy += 2)
+            {
+                if (!TryGetTerrain(ix, iy, out var tx, out var ty) || Terrain.GetAcreTemplate(tx, ty) != 0)
+                    return L.T("Die Rampe würde über den Rand der Insel, an den Strand oder ins Meer ragen.", "The incline would reach past the edge of the island, onto the beach or into the sea.");
+                var tile = Terrain.GetTile(tx, ty);
+                if (tile.UnitModel.IsRiver || tile.UnitModel.IsFall)
+                    return L.T("Unter der Rampe wäre Wasser.", "There would be water under the incline.");
+                // 0 at the bottom end, 3 at the top end
+                var step = ux != 0
+                    ? (ux > 0 ? (ix - fx) / 2 : (fx + fw - 2 - ix) / 2)
+                    : (uy > 0 ? (iy - fy) / 2 : (fy + fh - 2 - iy) / 2);
+                if (step == 0)
+                {
+                    if (tile.UnitModel != TerrainUnitModel.Base)
+                        return L.T("Unten an der Rampe ist kein flacher Boden.", "There is no flat ground at the bottom of the incline.");
+                    if (low is { } l && l != tile.Elevation)
+                        return L.T("Der Boden unten ist nicht gleich hoch.", "The ground at the bottom is not level.");
+                    low = tile.Elevation;
+                }
+                cliff |= tile.UnitModel.IsCliff;
+            }
+        }
+        // both lanes have to look the same at every step, so the cliff runs straight across
+        var lanes = new (bool Cliff, int Elevation)?[4];
+        for (int ix = fx; ix < fx + fw; ix += 2)
+        {
+            for (int iy = fy; iy < fy + fh; iy += 2)
+            {
+                TryGetTerrain(ix, iy, out var tx, out var ty);
+                var tile = Terrain.GetTile(tx, ty);
+                var step = ux != 0
+                    ? (ux > 0 ? (ix - fx) / 2 : (fx + fw - 2 - ix) / 2)
+                    : (uy > 0 ? (iy - fy) / 2 : (fy + fh - 2 - iy) / 2);
+                var look = (tile.UnitModel.IsCliff, (int)tile.Elevation);
+                if (lanes[step] is { } other && other != look)
+                    return L.T("Die Klippe verläuft hier nicht gerade.", "The cliff does not run straight here.");
+                lanes[step] = look;
+                if (step == 3 && (tile.UnitModel != TerrainUnitModel.Base || tile.Elevation != low + 1))
+                    return L.T("Oben an der Rampe ist kein flacher Boden eine Ebene höher.", "There is no flat ground one level higher at the top of the incline.");
+                if (tile.Elevation != low && tile.Elevation != low + 1)
+                    return L.T("Die Rampe kann nur eine Ebene überwinden.", "An incline can only climb one level.");
+            }
+        }
+        if (!cliff)
+            return L.T("Hier ist keine Klippe, über die die Rampe führen könnte.", "There is no cliff here for the incline to climb.");
+        if (low >= 2)
+            return L.T("Auf die oberste Ebene führen im Spiel keine Rampen.", "The game has no inclines up to the top level.");
+        if (Overlaps(Footprint(probe), ignore))
+            return InclineOnStructure;
+        for (int iy = fy; iy < fy + fh; iy++)
+        {
+            for (int ix = fx; ix < fx + fw; ix++)
+            {
+                if (TryGetRelative(ix, iy, out var rx, out var ry) && !Layer(0).GetTile(rx, ry).IsNone)
+                    return InclineOccupied;
+            }
+        }
+        return null;
+    }
+
+    private static string InclineOnStructure => L.T("Dort steht schon ein Gebäude, eine Brücke oder eine Rampe.", "A building, bridge or incline is already there.");
+
+    private static string InclineOccupied => L.T("Hier würde eine Rampe passen, aber auf ihrer Fläche liegt oder wächst etwas. Räum es erst weg.",
+                                                 "An incline would fit here, but something lies or grows where it would go. Clear it first.");
+
+    /// <summary>Finds an incline over the cliff next to the tapped tile, in any direction that fits.</summary>
+    public string? PlanIncline(int absX, int absY, SlopeType style, out Building incline)
+    {
+        incline = new Building();
+        if (Buildings.Count(b => b.BuildingType == BuildingType.Incline) >= MaxInclines)
+            return L.T($"Die Insel hat schon {MaxInclines} Rampen, mehr erlaubt das Spiel nicht.", $"The island already has {MaxInclines} inclines, the game allows no more.");
+        if (!TryGetTerrain(absX, absY, out _, out _))
+            return L.T("Tippe auf den Boden vor einer Klippe.", "Tap the ground in front of a cliff.");
+        var (tapX, tapY) = (absX >> 1, absY >> 1); // absolute terrain tile
+        // the ground would fit but something is in the way: worth telling instead of "no incline fits"
+        var blocked = new[] { InclineOccupied, InclineOnStructure };
+        string? blocker = null;
+        for (int angle = 0; angle < 4; angle++)
+        {
+            var (ux, uy) = UpDirection(angle);
+            // the half of the tapped tile picks the second lane, the other side is the fallback
+            var preferred = (uy != 0 ? absX : absY) % 2 == 0 ? -1 : 1;
+            foreach (var side in new[] { preferred, -preferred })
+            {
+                for (int k = 0; k < 4; k++)
+                {
+                    // the tapped tile is k steps above the bottom end
+                    var (bx, by) = (tapX - (ux * k), tapY - (uy * k));
+                    var (lx, ly) = uy != 0 ? (side, 0) : (0, side);
+                    var xs = new[] { bx, bx + (ux * 3), bx + lx, bx + lx + (ux * 3) };
+                    var ys = new[] { by, by + (uy * 3), by + ly, by + ly + (uy * 3) };
+                    var (minX, minY) = (xs.Min(), ys.Min());
+                    var (w, h) = uy != 0 ? (2, 4) : (4, 2);
+                    var x = (minX * 2) + w;
+                    var y = (minY * 2) + h;
+                    var error = CheckIncline(x, y, angle);
+                    if (error is not null && blocked.Contains(error))
+                        blocker ??= error;
+                    if (error is null)
+                    {
+                        incline.BuildingType = BuildingType.Incline;
+                        incline.X = (ushort)x;
+                        incline.Y = (ushort)y;
+                        incline.Angle = (byte)angle;
+                        incline.Type = (ushort)style;
+                        return null;
+                    }
+                }
+            }
+        }
+        return blocker ?? L.T("Hier passt keine Rampe. Tippe auf flachen Boden direkt vor einer Klippe, die eine Ebene hoch ist.",
+                              "No incline fits here. Tap flat ground right in front of a cliff that is one level high.");
+    }
+
+    /// <summary>Checks moving a building to a new centre; bridges are rebuilt in the bridge mode instead.</summary>
+    public string? CheckMove(Building building, int x, int y)
+    {
+        if (building.BuildingType == BuildingType.Bridge)
+            return L.T("Brücken reißt du ab und baust sie im Modus Brücken neu, damit sie über das Wasser passen.",
+                       "Remove a bridge and build it again in the bridge mode, so that it spans the water.");
+        if (building.BuildingType == BuildingType.Incline)
+            return CheckIncline(x, y, building.Angle, building);
+        if (!TryGetTerrain(x, y, out var tx, out var ty) || Terrain.GetAcreTemplate(tx, ty) != 0)
+            return L.T("Dort ist kein Land, sondern Strand oder Meer.", "That is no land but beach or sea.");
+        var tile = Terrain.GetTile(tx, ty);
+        if (tile.UnitModel != TerrainUnitModel.Base)
+            return L.T("Dort ist Wasser oder eine Klippe.", "There is water or a cliff there.");
+        var probe = new Building();
+        probe.CopyFrom(building);
+        probe.X = (ushort)x;
+        probe.Y = (ushort)y;
+        if (Overlaps(Footprint(probe), building))
+            return L.T("Dort steht schon ein anderes Gebäude.", "Another building is already there.");
+        return null;
+    }
+
     /// <summary>Puts a planned bridge into the first free building slot.</summary>
     public bool AddBuilding(Building building)
     {
@@ -220,6 +433,305 @@ public sealed class IslandMap(MainSave main)
     }
 
     private bool IsTerrain(int relX, int relY) => manager.ConfigTerrain.IsCoordinateValidRelative(relX, relY);
+
+    // ---- NHSE's file formats: .nhl items, .nht terrain, .nhb buildings ----
+
+    public static string SizeError(int have, int expect) =>
+        L.T($"Die Datei hat {have} Bytes, erwartet sind {expect}.", $"The file has {have} bytes, {expect} are expected.");
+
+    public byte[] DumpItems(int layer) => Layer(layer).DumpAll();
+
+    public string? ImportItems(int layer, byte[] data)
+    {
+        var target = Layer(layer);
+        var expect = target.TileInfo.TotalCount * Item.SIZE;
+        if (data.Length != expect && !FieldItemUpgrade.IsUpdateNeeded(data.Length, expect))
+            return SizeError(data.Length, expect);
+        FieldItemUpgrade.DetectUpdate(ref data, expect);
+        target.ImportAll(data);
+        return null;
+    }
+
+    /// <summary>One acre of items (32 x 32 tiles) starting at the absolute tile, like NHSE's view.</summary>
+    public byte[] DumpItemsAcre(int layer, int absX, int absY)
+    {
+        var (relX, relY) = Config.GetCoordinatesRelative(absX, absY);
+        return Layer(layer).DumpAcre(relX, relY);
+    }
+
+    public string? ImportItemsAcre(int layer, int absX, int absY, byte[] data)
+    {
+        var target = Layer(layer);
+        var expect = target.TileInfo.ViewCount * Item.SIZE;
+        if (data.Length != expect)
+            return SizeError(data.Length, expect);
+        var (relX, relY) = Config.GetCoordinatesRelative(absX, absY);
+        target.ImportAcre(data, relX, relY);
+        return null;
+    }
+
+    public byte[] DumpTerrain() => Terrain.DumpAll();
+
+    public string? ImportTerrain(byte[] data)
+    {
+        var expect = Terrain.TileInfo.TotalCount * TerrainTile.SIZE;
+        if (data.Length != expect)
+            return SizeError(data.Length, expect);
+        Terrain.ImportAll(data);
+        return null;
+    }
+
+    /// <summary>One acre of terrain (16 x 16 terrain tiles) starting under the absolute item tile.</summary>
+    public byte[] DumpTerrainAcre(int absX, int absY)
+    {
+        var (relX, relY) = manager.ConfigTerrain.GetCoordinatesRelative(absX / 2, absY / 2);
+        return Terrain.DumpAcre(relX, relY);
+    }
+
+    public string? ImportTerrainAcre(int absX, int absY, byte[] data)
+    {
+        var expect = Terrain.TileInfo.ViewCount * TerrainTile.SIZE;
+        if (data.Length != expect)
+            return SizeError(data.Length, expect);
+        var (relX, relY) = manager.ConfigTerrain.GetCoordinatesRelative(absX / 2, absY / 2);
+        Terrain.ImportAcre(data, relX, relY);
+        return null;
+    }
+
+    public byte[] DumpBuildings() => Building.SetArray(Buildings);
+
+    public string? ImportBuildings(byte[] data)
+    {
+        // 46 since 2.0, 40 before
+        if (data.Length is not (Building.SIZE * MainSaveOffsets.BuildingCount or Building.SIZE * 40))
+            return SizeError(data.Length, Building.SIZE * MainSaveOffsets.BuildingCount);
+        var list = Building.GetArray(data);
+        for (int i = 0; i < list.Length && i < Buildings.Count; i++)
+            Buildings[i].CopyFrom(list[i]);
+        return null;
+    }
+
+    // ---- terraforming ----
+
+    public enum Landform { Raise, Lower, Water, Land }
+
+    /// <summary>The highest cliff level the game builds (ground is level 0).</summary>
+    public const int MaxElevation = 3;
+
+    /// <summary>Rounded outer corners (3B) like the island's own cliffs and rivers, or angular ones (3C).</summary>
+    public bool RoundCorners { get; set; } = true;
+
+    private bool IsInlandAround(int x, int y)
+    {
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                if (!IsTerrain(x + dx, y + dy) || Terrain.GetAcreTemplate(x + dx, y + dy) != 0)
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    private bool NearFall(int x, int y)
+    {
+        for (int dy = -2; dy <= 2; dy++)
+        {
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                if (IsTerrain(x + dx, y + dy) && Terrain.GetTile(x + dx, y + dy).UnitModel.IsFall)
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    // a terrain tile covers 2 x 2 item tiles; buildings must not stand on changed ground, bridges and
+    // inclines also keep a free ring around them because they rest on the ground next to them
+    private bool NearStructure(int x, int y)
+    {
+        var (ax, ay) = manager.ConfigTerrain.GetCoordinatesAbsolute(x, y);
+        var tile = (X: ax * 2, Y: ay * 2, W: 2, H: 2);
+        foreach (var b in Buildings.Where(b => b.BuildingType != 0))
+        {
+            var (bx, by, bw, bh) = Footprint(b);
+            var ring = b.BuildingType is BuildingType.Bridge or BuildingType.Incline ? 2 : 0;
+            if (tile.X < bx + bw + ring && bx - ring < tile.X + tile.W && tile.Y < by + bh + ring && by - ring < tile.Y + tile.H)
+                return true;
+        }
+        return false;
+    }
+
+    // the game keeps neighbouring tiles at most one level apart and never lets a river run next to lower ground
+    private bool FitsAround(int x, int y)
+    {
+        for (int cy = y - 1; cy <= y + 1; cy++)
+        {
+            for (int cx = x - 1; cx <= x + 1; cx++)
+            {
+                if (!IsTerrain(cx, cy))
+                    continue;
+                var c = Terrain.GetTile(cx, cy);
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        if (!IsTerrain(cx + dx, cy + dy))
+                            continue;
+                        var n = Terrain.GetTile(cx + dx, cy + dy);
+                        if (Math.Abs(n.Elevation - c.Elevation) > 1)
+                            return false;
+                        if (c.UnitModel.IsRiver && n.Elevation < c.Elevation)
+                            return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Raises or lowers one terrain tile to <paramref name="level"/>, digs a river into it or fills one in,
+    /// like the island designer. The pieces are only placeholders until <see cref="ShapeTerrain"/> runs.
+    /// Returns why nothing happened, or null when the tile changed.
+    /// </summary>
+    public string? ChangeLand(int x, int y, Landform action, int level)
+    {
+        if (!IsInlandAround(x, y))
+            return L.T("Am Strand und an der Küste lässt sich das Gelände nicht ändern.", "The ground cannot be changed on the beach and at the coast.");
+        if (NearFall(x, y))
+            return L.T("Wasserfälle und ihre Umgebung bleiben, wie sie sind.", "Waterfalls and the ground around them stay as they are.");
+        if (NearStructure(x, y))
+            return L.T("Unter und neben Gebäuden, Brücken und Rampen bleibt das Gelände, wie es ist.", "The ground under and next to buildings, bridges and inclines stays as it is.");
+        var tile = Terrain.GetTile(x, y);
+        var (model, elevation) = (tile.UnitModel, tile.Elevation);
+        var river = model.IsRiver;
+        switch (action)
+        {
+            case Landform.Raise when river || tile.Elevation != level - 1 || level > MaxElevation:
+                return river ? L.T("Im Fluss lässt sich keine Klippe bauen.", "No cliff can be built in the river.")
+                    : level > MaxElevation ? L.T("Höher geht es im Spiel nicht.", "The game does not go any higher.") : string.Empty;
+            case Landform.Lower when river || tile.Elevation != level + 1 || level < 0:
+                return river ? L.T("Den Fluss schüttest du erst zu.", "Fill the river in first.")
+                    : level < 0 ? L.T("Tiefer geht es nicht.", "It does not go any lower.") : string.Empty;
+            case Landform.Water when river:
+            case Landform.Land when !river:
+                return string.Empty;
+            case Landform.Raise:
+                tile.Elevation = (ushort)level;
+                break;
+            case Landform.Lower:
+                tile.Elevation = (ushort)level;
+                break;
+            case Landform.Water:
+                tile.UnitModel = TerrainUnitModel.River8A;
+                break;
+            case Landform.Land:
+                tile.UnitModel = TerrainUnitModel.Base;
+                break;
+        }
+        if (!FitsAround(x, y))
+        {
+            tile.UnitModel = model;
+            tile.Elevation = elevation;
+            return action switch
+            {
+                Landform.Water => L.T("Ein Fluss braucht ringsum Boden auf seiner Höhe, sonst bräuchte er einen Wasserfall.", "A river needs ground at its own level all around, otherwise it would need a waterfall."),
+                _ => L.T("Klippen gehen immer nur eine Ebene hoch, und neben einem Fluss darf es nicht tiefer werden.", "Cliffs only ever rise by one level, and the ground next to a river must not drop."),
+            };
+        }
+        if (action == Landform.Water)
+            ClearItemsOnTerrain(x, y);
+        return null;
+    }
+
+    // nothing can stay in the water: removes whatever lies on the 2 x 2 item tiles of a terrain tile, on both layers
+    private void ClearItemsOnTerrain(int x, int y)
+    {
+        var (ax, ay) = manager.ConfigTerrain.GetCoordinatesAbsolute(x, y);
+        foreach (var layer in new[] { Layer(0), Layer(1) })
+        {
+            for (int iy = ay * 2; iy < (ay * 2) + 2; iy++)
+            {
+                for (int ix = ax * 2; ix < (ax * 2) + 2; ix++)
+                {
+                    if (!TryGetRelative(ix, iy, out var rx, out var ry))
+                        continue;
+                    var t = layer.GetTile(rx, ry);
+                    if (t.IsNone)
+                        continue;
+                    if (t.IsExtension)
+                    {
+                        rx -= t.ExtensionX;
+                        ry -= t.ExtensionY;
+                        layer.TileInfo.ClampInside(ref rx, ref ry);
+                        t = layer.GetTile(rx, ry);
+                    }
+                    if (t.IsRoot)
+                        layer.DeleteExtensionTiles(t, rx, ry);
+                    t.Delete();
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Picks the fitting cliff and river pieces for every tile in the area and the ring around it,
+    /// from which neighbours are on the same level (cliffs) or water (rivers). Paths cannot lie on
+    /// cliffs or water, so they are taken off there and their neighbours reshaped.
+    /// </summary>
+    public void ShapeTerrain(int x0, int y0, int x1, int y1)
+    {
+        for (int y = y0 - 1; y <= y1 + 1; y++)
+        {
+            for (int x = x0 - 1; x <= x1 + 1; x++)
+            {
+                if (!IsTerrain(x, y) || Terrain.GetAcreTemplate(x, y) != 0)
+                    continue;
+                var tile = Terrain.GetTile(x, y);
+                var m = tile.UnitModel;
+                if (m.IsFall || !(m.IsRiver || m.IsCliff || m == TerrainUnitModel.Base))
+                    continue;
+                var (cx, cy, e) = (x, y, tile.Elevation);
+                string name;
+                ushort angle;
+                if (m.IsRiver)
+                {
+                    var (suffix, a) = RoadShapes.Shape((dx, dy) => !IsTerrain(cx + dx, cy + dy)
+                        || Terrain.GetTile(cx + dx, cy + dy).UnitModel is var n && (n.IsRiver || n.IsFall));
+                    (name, angle) = ($"River{Corner(suffix)}", a);
+                }
+                else
+                {
+                    var (suffix, a) = RoadShapes.Shape((dx, dy) => !IsTerrain(cx + dx, cy + dy) || Terrain.GetTile(cx + dx, cy + dy).Elevation >= e);
+                    (name, angle) = suffix == "8A" ? ("Base", (ushort)0) : ($"Cliff{Corner(suffix)}", a);
+                }
+                // keep a piece that already fits, with its own corner style and look
+                if (tile.LandMakingAngle == angle && SamePiece(m, name))
+                    continue;
+                var model = Enum.Parse<TerrainUnitModel>(name);
+                tile.Variation = 0;
+                tile.UnitModel = model;
+                tile.LandMakingAngle = angle;
+                if (model != TerrainUnitModel.Base && tile.UnitModelRoad != 0)
+                {
+                    tile.UnitModelRoad = 0;
+                    tile.VariationRoad = 0;
+                    tile.LandMakingAngleRoad = 0;
+                }
+            }
+        }
+        ShapePaths(x0 - 2, y0 - 2, x1 + 2, y1 + 2);
+    }
+
+    private string Corner(string suffix) => suffix == "3C" && RoundCorners ? "3B" : suffix;
+
+    private static bool SamePiece(TerrainUnitModel model, string name)
+    {
+        var have = model.ToString().Replace("_2", string.Empty).Replace("_3", string.Empty);
+        return have == name || (have[^2..] is "3B" or "3C" && name[^2..] is "3B" or "3C" && have[..^2] == name[..^2]);
+    }
 
     /// <summary>Paths go on flat ground of the island itself: no river, cliff, waterfall or beach.</summary>
     public bool CanHavePath(int relX, int relY) =>

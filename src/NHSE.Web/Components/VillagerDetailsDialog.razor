@@ -1,4 +1,5 @@
 @inject ItemCatalog Catalog
+@inject SaveSession Session
 
 @* Everything about one resident that NHSE's villager editor offers: personality, friendship, clothes and furniture. *@
 <div class="dialog-backdrop" @onclick="Close">
@@ -13,6 +14,8 @@
                 <button class="@(page == Page.Friends ? "active" : "")" @onclick="() => page = Page.Friends">@L.T("Freundschaft", "Friendship")</button>
                 <button class="@(page == Page.Clothes ? "active" : "")" @onclick="() => page = Page.Clothes">@L.T("Kleidung", "Clothes")</button>
                 <button class="@(page == Page.Furniture ? "active" : "")" @onclick="() => page = Page.Furniture">@L.T("Möbel", "Furniture")</button>
+                <button class="@(page == Page.House ? "active" : "")" @onclick="() => page = Page.House">@L.T("Haus", "House")</button>
+                <button class="@(page == Page.Design ? "active" : "")" @onclick="() => page = Page.Design">@L.T("Design", "Design")</button>
             </div>
         </nav>
 
@@ -33,6 +36,48 @@
                         <p class="hint">@L.T("Die Persönlichkeit bestimmt, wie der Bewohner spricht, und auch, ob er männlich oder weiblich ist.",
                                              "The personality decides how the villager talks, and also whether they are male or female.")</p>
                     </div>
+
+                    <h4>@L.T("Basteln (DIY-Timer)", "Crafting (DIY timer)")</h4>
+                    <div class="profile-fields">
+                        <label class="check">
+                            <input type="checkbox" checked="@Crafting" @onchange="e => SetCrafting(e.Value is true)" />
+                            @L.T("Bastelt gerade", "Is crafting")
+                        </label>
+                        @if (Crafting)
+                        {
+                            <label>
+                                <span>@L.T("Fertig um", "Done at")</span>
+                                <input type="time" step="1" value="@($"{Villager.DIYEndHour:00}:{Villager.DIYEndMinute:00}:{Villager.DIYEndSecond:00}")" @onchange="SetCraftTime" />
+                            </label>
+                        }
+                        <label>
+                            <span>@L.T("Rezept", "Recipe")</span>
+                            <select @onchange="SetRecipe">
+                                @foreach (var (id, name) in recipes)
+                                {
+                                    <option value="@id" selected="@(id == Villager.DIYRecipeIndex)">@name</option>
+                                }
+                            </select>
+                        </label>
+                    </div>
+                    <p class="hint">@L.T("Wie in NHSE: wann der Bewohner mit dem Basteln fertig ist und welches Rezept er dann verrät.",
+                                         "Like NHSE: when the villager is done crafting and which recipe they then share.")</p>
+
+                    <h4>@L.T("Dateien und Flags", "Files and flags")</h4>
+                    <div class="buttons">
+                        <button @onclick="SaveVillager">@L.T($"Bewohner sichern (.{Villager.Extension})", $"Save the villager (.{Villager.Extension})")</button>
+                        <label class="button">
+                            @L.T("Bewohner aus Datei laden", "Load a villager from a file")
+                            <InputFile accept=".nhv,.nhv2" OnChange="LoadVillager" />
+                        </label>
+                        <button @onclick="() => flags = FlagTarget.Villager">@L.T("Bewohner-Flags", "Villager flags")</button>
+                    </div>
+                    @if (fileMessage is not null)
+                    {
+                        <p class="hint">@fileMessage</p>
+                    }
+                    <p class="hint">@L.T("Ein Bewohner aus einer anderen Insel wird an diese Insel und Spieler 1 angepasst, wie es NHSE auf Nachfrage tut. Sein Haus bleibt das alte, dafür gibt es unter Haus eigene Dateien.",
+                                         "A villager from another island is adapted to this island and player 1, as NHSE does when asked. Their house stays the old one, the House tab has its own files for that.")</p>
                     break;
 
                 case Page.Friends:
@@ -59,6 +104,27 @@
                                 <span>@L.T("Spitzname für dich", "Nickname for you")</span>
                                 <input maxlength="10" value="@m.NickName" @onchange="e => SetNickName(m, e.Value)" />
                             </label>
+                            <details class="raw-values">
+                                <summary>@L.T("Mehr wie in NHSE", "More like NHSE")</summary>
+                                <div class="raw-grid">
+                                    @for (int g = 0; g < Greetings; g++)
+                                    {
+                                        var gi = g;
+                                        <label>
+                                            <span>@(gi == 0 ? L.T("Gruß", "Greeting") : L.T($"Gruß {gi}", $"Greeting {gi}"))</span>
+                                            <input maxlength="24" value="@m.GetGreeting(gi)" @onchange="e => SetGreeting(m, gi, e.Value)" />
+                                        </label>
+                                    }
+                                </div>
+                                <div class="buttons">
+                                    <button class="small" @onclick="() => OpenMemoryFlags(m)">@L.T("Erinnerungs-Flags", "Memory flags")</button>
+                                    <button class="small" @onclick="() => SaveMemory(m)">@L.T("Sichern (.nhvpm)", "Save (.nhvpm)")</button>
+                                    <label class="button small">
+                                        @L.T("Laden", "Load")
+                                        <InputFile accept=".nhvpm" OnChange="e => LoadMemory(index, e)" />
+                                    </label>
+                                </div>
+                            </details>
                         </div>
                     }
                     <p class="hint">@L.T("Freundschaft geht von 0 bis 255. Ab etwa 200 schenken Bewohner ihr Foto.", "Friendship goes from 0 to 255. From about 200 villagers give their photo.")</p>
@@ -73,6 +139,50 @@
                         }
                     </div>
                     <p class="hint">@L.T("Was der Bewohner im Schrank hat und anziehen kann.", "What the villager has in the wardrobe and can wear.")</p>
+                    break;
+
+                case Page.House when House is null:
+                    <p class="hint">@L.T("Dieser Bewohner hat noch kein eigenes Haus.", "This villager has no house yet.")</p>
+                    break;
+
+                case Page.House:
+                    <HouseExterior House="House" ForPlayer="false" Changed="StoreHouse" />
+                    <h4>@L.T("Tapete und Boden", "Wallpaper and flooring")</h4>
+                    <RoomSurfaces Value="@Villager.Room" ValueChanged="SetRoom" />
+                    <div class="buttons">
+                        <button @onclick="SaveHouse">@L.T($"Haus sichern (.{House.Extension})", $"Save the house (.{House.Extension})")</button>
+                        <label class="button">
+                            @L.T("Haus aus Datei laden", "Load a house from a file")
+                            <InputFile accept=".nhvh,.nhvh2" OnChange="LoadHouse" />
+                        </label>
+                    </div>
+                    @if (fileMessage is not null)
+                    {
+                        <p class="hint">@fileMessage</p>
+                    }
+                    break;
+
+                case Page.Design:
+                    <div class="design-sheets">
+                        @for (int sheet = 0; sheet < DesignPatternPRO.SheetCount; sheet++)
+                        {
+                            <img src="@DesignImage.Preview(Villager.Design, sheet, 4)" alt="" />
+                        }
+                    </div>
+                    <p class="hint">@(string.IsNullOrWhiteSpace(Villager.Design.DesignName)
+                        ? L.T("Das PRO-Design, das der Bewohner trägt.", "The PRO design the villager wears.")
+                        : L.T($"„{Villager.Design.DesignName}“, das PRO-Design, das der Bewohner trägt.", $"\"{Villager.Design.DesignName}\", the PRO design the villager wears."))</p>
+                    <div class="buttons">
+                        <button @onclick="SaveDesign">@L.T("Als .nhpd sichern", "Save as .nhpd")</button>
+                        <label class="button">
+                            @L.T("PRO-Design laden (.nhpd)", "Load a PRO design (.nhpd)")
+                            <InputFile accept=".nhpd" OnChange="LoadDesign" />
+                        </label>
+                    </div>
+                    @if (fileMessage is not null)
+                    {
+                        <p class="hint">@fileMessage</p>
+                    }
                     break;
 
                 default:
@@ -90,6 +200,22 @@
     </div>
 </div>
 
+@if (flags == FlagTarget.Villager)
+{
+    var counts = Villager.GetEventFlagsSave();
+    <FlagListDialog Title="@L.T($"Flags von {VillagerCatalog.Name(Villager)}", $"Flags of {VillagerCatalog.Name(Villager)}")" Count="@counts.Length"
+                    Get="i => villagerFlags[i]" Set="(i, v) => villagerFlags[i] = (ushort)v" Describe="FlagNames.Villager"
+                    Min="0" Max="ushort.MaxValue" FileName="EventFlagVillager"
+                    Changed="StoreVillagerFlags" Closed="() => flags = FlagTarget.None" />
+}
+@if (memoryFlags is { } mf)
+{
+    <FlagListDialog Title="@L.T($"Erinnerung an {mf.PlayerName}", $"Memory of {mf.PlayerName}")" Count="0x100"
+                    Get="i => memoryFlagData[i]" Set="(i, v) => memoryFlagData[i] = (byte)v" Describe="FlagNames.Memory"
+                    Min="0" Max="255" ElementSize="1" FileName="EventFlagVillagerMemoryPlayer"
+                    Changed="() => StoreMemoryFlags(mf)" Closed="() => memoryFlags = null" />
+}
+
 @if (editing is { } e)
 {
     <ItemPickerDialog Title="@(page == Page.Clothes ? L.T("Kleidungsstück", "Clothing") : L.T("Möbelstück", "Furniture"))"
@@ -98,10 +224,19 @@
 }
 
 @code {
-    private enum Page { General, Friends, Clothes, Furniture }
+    private enum Page { General, Friends, Clothes, Furniture, House, Design }
+    private enum FlagTarget { None, Villager }
+
+    private const int Greetings = 11;
 
     [Parameter, EditorRequired] public IVillager Villager { get; set; } = null!;
+    [Parameter] public IVillagerHouse? House { get; set; }
+    /// <summary>Player 1, the owner villagers from other islands are adapted to.</summary>
+    [Parameter, EditorRequired] public IVillagerOrigin Host { get; set; } = null!;
     [Parameter] public EventCallback Changed { get; set; }
+    /// <summary>The house to store in this villager's house slot, the same one after a change or a new one from a file.</summary>
+    [Parameter] public EventCallback<IVillagerHouse> HouseChanged { get; set; }
+    [Parameter] public EventCallback<IVillager> Replaced { get; set; }
     [Parameter] public EventCallback Closed { get; set; }
 
     private Page page;
@@ -109,12 +244,21 @@
     private List<VillagerItem> clothes = [];
     private List<VillagerItem> furniture = [];
     private (List<VillagerItem> List, int Index)? editing;
+    private List<(ushort Id, string Name)> recipes = [];
+    private string? fileMessage;
+    private FlagTarget flags;
+    private ushort[] villagerFlags = [];
+    private GSaveMemory? memoryFlags;
+    private byte[] memoryFlagData = [];
 
     protected override async Task OnInitializedAsync()
     {
         memories = Villager.GetMemories().Select((m, i) => (m, i)).Where(p => !string.IsNullOrWhiteSpace(p.m.PlayerName)).ToList();
         clothes = [.. Villager.WearStockList];
         furniture = [.. Villager.FtrStockList];
+        villagerFlags = Villager.GetEventFlagsSave();
+        recipes = [.. RecipeList.Recipes.Keys.Select(id => (id, GameInfo.Strings.GetItemName(new Item(Item.DIYRecipe) { FreeParam = id })))
+            .OrderBy(r => r.Item2, StringComparer.CurrentCultureIgnoreCase)];
         await Catalog.EnsureLoadedAsync();
     }
 
@@ -171,6 +315,169 @@
             Villager.WearStockList = clothes;
         else
             Villager.FtrStockList = furniture;
+        await Save();
+    }
+
+    // ---- crafting ----
+
+    // both hour and minute are 255 while the villager is not crafting, like NHSE reads it
+    private bool Crafting => Villager.DIYEndHour != byte.MaxValue && Villager.DIYEndMinute != byte.MaxValue;
+
+    private async Task SetCrafting(bool value)
+    {
+        Villager.DIYEndHour = value ? (byte)DateTime.Now.AddHours(1).Hour : byte.MaxValue;
+        Villager.DIYEndMinute = value ? (byte)0 : byte.MaxValue;
+        Villager.DIYEndSecond = 0;
+        await Save();
+    }
+
+    private async Task SetCraftTime(ChangeEventArgs e)
+    {
+        if (!TimeOnly.TryParse(e.Value?.ToString(), out var t))
+            return;
+        Villager.DIYEndHour = (byte)t.Hour;
+        Villager.DIYEndMinute = (byte)t.Minute;
+        Villager.DIYEndSecond = (byte)t.Second;
+        await Save();
+    }
+
+    private async Task SetRecipe(ChangeEventArgs e)
+    {
+        if (!ushort.TryParse(e.Value?.ToString(), out var id))
+            return;
+        Villager.DIYRecipeIndex = id;
+        await Save();
+    }
+
+    // ---- files ----
+
+    private string FileName => Files.Safe(VillagerCatalog.Name(Villager));
+
+    private Task SaveVillager() => Files.Save(Session, $"{FileName}.{Villager.Extension}", Villager.Write());
+
+    private async Task LoadVillager(InputFileChangeEventArgs e)
+    {
+        var main = Session.Save!.Main;
+        var expect = main.Offsets.VillagerSize;
+        var data = await Files.Read(e.File, 1024 * 1024);
+        if (data is null || !VillagerConverter.IsCompatible(data.Length, expect))
+        {
+            fileMessage = IslandMap.SizeError((int)e.File.Size, expect);
+            return;
+        }
+        data = VillagerConverter.GetCompatible(data, expect);
+        if (data.Length != expect)
+        {
+            fileMessage = IslandMap.SizeError(data.Length, expect);
+            return;
+        }
+        var loaded = main.Offsets.ReadVillager(data);
+        var adapted = !loaded.IsOriginatedFrom(Host);
+        if (adapted)
+        {
+            var raw = loaded.Write();
+            loaded.ChangeOrigins(Host, raw);
+            loaded = main.Offsets.ReadVillager(raw);
+        }
+        await Replaced.InvokeAsync(loaded);
+        fileMessage = adapted
+            ? L.T("Bewohner geladen und an diese Insel angepasst.", "Loaded the villager and adapted them to this island.")
+            : L.T("Bewohner geladen.", "Loaded the villager.");
+    }
+
+    private Task StoreHouse() => HouseChanged.InvokeAsync(House!);
+
+    private async Task SetRoom(GSaveRoomFloorWall value)
+    {
+        Villager.Room = value;
+        await Save();
+    }
+
+    private Task SaveHouse() => Files.Save(Session, $"{FileName}.{House!.Extension}", House.Write());
+
+    private async Task LoadHouse(InputFileChangeEventArgs e)
+    {
+        var main = Session.Save!.Main;
+        var expect = main.Offsets.VillagerHouseSize;
+        var data = await Files.Read(e.File, 1024 * 1024);
+        if (data is null || !VillagerHouseConverter.IsCompatible(data.Length, expect))
+        {
+            fileMessage = IslandMap.SizeError((int)e.File.Size, expect);
+            return;
+        }
+        Memory<byte> converted = VillagerHouseConverter.GetCompatible(data, expect);
+        if (converted.Length != expect)
+        {
+            fileMessage = IslandMap.SizeError(converted.Length, expect);
+            return;
+        }
+        // the household stays, only the house itself comes from the file
+        var loaded = main.Offsets.ReadVillagerHouse(converted);
+        loaded.NPC1 = House!.NPC1;
+        await HouseChanged.InvokeAsync(loaded);
+        fileMessage = L.T("Haus geladen.", "Loaded the house.");
+    }
+
+    private Task SaveDesign() => Files.Save(Session, $"{FileName}.nhpd", Villager.Design.Data.ToArray());
+
+    private async Task LoadDesign(InputFileChangeEventArgs e)
+    {
+        var data = await Files.Read(e.File, DesignPatternPRO.SIZE);
+        if (data is null || data.Length != DesignPatternPRO.SIZE)
+        {
+            fileMessage = IslandMap.SizeError((int)e.File.Size, DesignPatternPRO.SIZE);
+            return;
+        }
+        Villager.Design = new DesignPatternPRO(data);
+        await Save();
+        fileMessage = L.T("Design geladen.", "Loaded the design.");
+    }
+
+    // ---- memories ----
+
+    // a memory reads and writes straight into the villager's data
+    private async Task SetGreeting(GSaveMemory memory, int index, object? value)
+    {
+        memory.SetGreeting(value?.ToString() ?? string.Empty, index);
+        await Save();
+    }
+
+    private void OpenMemoryFlags(GSaveMemory memory)
+    {
+        memoryFlagData = memory.GetEventFlags();
+        memoryFlags = memory;
+    }
+
+    private Task SaveMemory(GSaveMemory memory) => Files.Save(Session, $"{FileName}.nhvpm", memory.Data.ToArray());
+
+    private async Task LoadMemory(int index, InputFileChangeEventArgs e)
+    {
+        var data = await Files.Read(e.File, GSaveMemory.SIZE);
+        if (data is null || data.Length != GSaveMemory.SIZE)
+        {
+            fileMessage = IslandMap.SizeError((int)e.File.Size, GSaveMemory.SIZE);
+            return;
+        }
+        var all = Villager.GetMemories();
+        var old = all[index];
+        var loaded = new GSaveMemory(data);
+        if (!loaded.IsOriginatedFrom(old))
+            loaded.ChangeOrigins(old, loaded.Data);
+        all[index] = loaded;
+        Villager.SetMemories(all);
+        memories = Villager.GetMemories().Select((m, i) => (m, i)).Where(p => !string.IsNullOrWhiteSpace(p.m.PlayerName)).ToList();
+        await Save();
+    }
+
+    private async Task StoreMemoryFlags(GSaveMemory memory)
+    {
+        memory.SetEventFlags(memoryFlagData);
+        await Save();
+    }
+
+    private async Task StoreVillagerFlags()
+    {
+        Villager.SetEventFlagsSave(villagerFlags);
         await Save();
     }
 

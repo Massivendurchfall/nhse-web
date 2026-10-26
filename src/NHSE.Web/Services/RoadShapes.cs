@@ -108,6 +108,17 @@ public static partial class RoadShapes
     /// </summary>
     public static (TerrainUnitModel Model, ushort Angle) Piece(string type, Func<int, int, bool> isPath)
     {
+        var (suffix, angle) = Shape(isPath);
+        return (Enum.Parse<TerrainUnitModel>($"Road{type}{suffix}"), angle);
+    }
+
+    /// <summary>
+    /// The piece name ("0A" to "8A") and angle for a tile whose neighbours belong to the same shape where
+    /// <paramref name="isMember"/> says so. Rivers and cliffs use the same pieces as paths.
+    /// </summary>
+    public static (string Suffix, ushort Angle) Shape(Func<int, int, bool> isMember)
+    {
+        var isPath = isMember;
         int mask = 0;
         if (isPath(0, -1)) mask |= Up;
         if (isPath(1, 0)) mask |= Right;
@@ -117,8 +128,7 @@ public static partial class RoadShapes
         if ((mask & (Up | Right)) == (Up | Right) && isPath(1, -1)) mask |= UpRight;
         if ((mask & (Down | Left)) == (Down | Left) && isPath(-1, 1)) mask |= DownLeft;
         if ((mask & (Down | Right)) == (Down | Right) && isPath(1, 1)) mask |= DownRight;
-        var (suffix, angle) = Lookup[mask];
-        return (Enum.Parse<TerrainUnitModel>($"Road{type}{suffix}"), angle);
+        return Lookup[mask];
     }
 
     [GeneratedRegex("^Road([A-Za-z]+)[0-8][A-C]$")]

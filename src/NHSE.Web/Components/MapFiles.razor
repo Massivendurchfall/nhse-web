@@ -1,0 +1,128 @@
+@inject SaveSession Session
+
+<details class="raw-values">
+    <summary>@L.T("Dateien wie in NHSE", "Files like NHSE")</summary>
+    <p class="hint">@L.T($"Ausschnitt heißt: 32 x 32 Felder ab der linken oberen Ecke der Detailansicht (gerade Feld {ViewX}, {ViewY}). Gegenstände gelten für die gewählte Ebene ({(LayerIndex == 0 ? "Boden" : "auf Möbeln")}).",
+                         $"Section means 32 x 32 tiles from the top left corner of the detail view (now tile {ViewX}, {ViewY}). Items are for the chosen layer ({(LayerIndex == 0 ? "ground" : "on furniture")}).")</p>
+    <ul class="file-rows">
+        @foreach (var f in Kinds)
+        {
+            var kind = f;
+            <li>
+                <span>@L.T(kind.De, kind.En) <span class="hint">.@kind.Extension</span></span>
+                <button class="small" @onclick="() => Export(kind)">@L.T("Sichern", "Save")</button>
+                <label class="button small">
+                    @L.T("Laden", "Load")
+                    <InputFile accept="@($".{kind.Extension}")" OnChange="e => Import(kind, e)" />
+                </label>
+            </li>
+        }
+    </ul>
+    @if (message is not null)
+    {
+        <p class="hint">@message</p>
+    }
+    <p class="hint">@L.T("Laden ersetzt den Teil der Insel vollständig, ohne Prüfung, genau wie NHSE. Rückgängig klappt danach trotzdem.",
+                         "Loading replaces that part of the island completely, without any check, just like NHSE. Undo still works afterwards.")</p>
+</details>
+
+@code {
+    private enum Part { Items, ItemsAcre, Flags, Terrain, TerrainAcre, Buildings, Acres }
+
+    private sealed record FileKind(Part Part, string De, string En, string Extension);
+
+    private static readonly FileKind[] Kinds =
+    [
+        new(Part.Items, "Gegenstände der ganzen Insel", "Items of the whole island", "nhl"),
+        new(Part.ItemsAcre, "Gegenstände im Ausschnitt", "Items in the section", "nhl"),
+        new(Part.Flags, "Gegenstand-Flags der ganzen Insel", "Item flags of the whole island", "nhlf"),
+        new(Part.Terrain, "Gelände der ganzen Insel", "Terrain of the whole island", "nht"),
+        new(Part.TerrainAcre, "Gelände im Ausschnitt", "Terrain in the section", "nht"),
+        new(Part.Buildings, "Bauwerke", "Structures", "nhb"),
+        new(Part.Acres, "Inselform (Küste und Meer)", "Island shape (coast and sea)", "nha"),
+    ];
+
+    [Parameter, EditorRequired] public IslandMap Map { get; set; } = null!;
+    [Parameter] public int ViewX { get; set; }
+    [Parameter] public int ViewY { get; set; }
+    [Parameter] public int LayerIndex { get; set; }
+    /// <summary>Called before an import changes the map, to keep the undo step.</summary>
+    [Parameter] public EventCallback Before { get; set; }
+    /// <summary>Called after an import changed the map in memory.</summary>
+    [Parameter] public EventCallback After { get; set; }
+    /// <summary>Called after an import changed main.dat directly, so the map has to be read again.</summary>
+    [Parameter] public EventCallback Reload { get; set; }
+
+    private string? message;
+
+    private MainSave Main => Session.Save!.Main;
+
+    private int FlagOffset => LayerIndex == 0 ? Main.FieldItemFlag0 : Main.FieldItemFlag1;
+    private int FlagSize => (LayerIndex == 0 ? Main.FieldItemFlag0Data : Main.FieldItemFlag1Data).Length;
+
+    private string FileName(FileKind kind) => kind.Part switch
+    {
+        Part.Items => $"acres-{LayerIndex + 1}.nhl",
+        Part.ItemsAcre => $"{ViewX:000}-{ViewY:000}-{LayerIndex + 1}.nhl",
+        Part.Flags => $"flags-{LayerIndex}.nhlf",
+        Part.Terrain => "terrainAcres.nht",
+        Part.TerrainAcre => $"{ViewX:000}-{ViewY:000}.nht",
+        Part.Buildings => "buildings.nhb",
+        _ => "acres.nha",
+    };
+
+    private async Task Export(FileKind kind)
+    {
+        message = null;
+        var data = kind.Part switch
+        {
+            Part.Items => Map.DumpItems(LayerIndex),
+            Part.ItemsAcre => Map.DumpItemsAcre(LayerIndex, ViewX, ViewY),
+            Part.Flags => Main.Data.Slice(FlagOffset, FlagSize).ToArray(),
+            Part.Terrain => Map.DumpTerrain(),
+            Part.TerrainAcre => Map.DumpTerrainAcre(ViewX, ViewY),
+            Part.Buildings => Map.DumpBuildings(),
+            _ => Main.GetAcreBytes(),
+        };
+        await Files.Save(Session, FileName(kind), data);
+    }
+
+    private async Task Import(FileKind kind, InputFileChangeEventArgs e)
+    {
+        var data = await Files.Read(e.File, 64 * 1024 * 1024);
+        if (data is null)
+        {
+            message = L.T("Die Datei ist zu groß.", "The file is too big.");
+            return;
+        }
+        if (kind.Part is Part.Flags or Part.Acres)
+        {
+            // these live in main.dat itself, the map reads them again afterwards
+            var (offset, size) = kind.Part == Part.Flags ? (FlagOffset, FlagSize) : (-1, Main.GetAcreBytes().Length);
+            if (data.Length != size)
+            {
+                message = IslandMap.SizeError(data.Length, size);
+                return;
+            }
+            if (kind.Part == Part.Flags)
+                data.CopyTo(Main.Data[offset..]);
+            else
+                Main.SetAcreBytes(data);
+            Session.MarkDirty();
+            message = L.T("Geladen.", "Loaded.");
+            await Reload.InvokeAsync();
+            return;
+        }
+        await Before.InvokeAsync();
+        var error = kind.Part switch
+        {
+            Part.Items => Map.ImportItems(LayerIndex, data),
+            Part.ItemsAcre => Map.ImportItemsAcre(LayerIndex, ViewX, ViewY, data),
+            Part.Terrain => Map.ImportTerrain(data),
+            Part.TerrainAcre => Map.ImportTerrainAcre(ViewX, ViewY, data),
+            _ => Map.ImportBuildings(data),
+        };
+        message = error ?? L.T("Geladen.", "Loaded.");
+        await After.InvokeAsync();
+    }
+}

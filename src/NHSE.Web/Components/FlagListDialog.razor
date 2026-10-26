@@ -1,0 +1,124 @@
+@inject SaveSession Session
+
+@* NHSE's flag editors in one: every counter with its name, editable, plus .nhfl files. *@
+<div class="dialog-backdrop" @onclick="Close">
+    <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+        <header class="dialog-head">
+            <h3>@Title</h3>
+            <button class="icon-button" aria-label="@L.T("Schließen", "Close")" @onclick="Close">&#x2715;</button>
+        </header>
+        <div class="filter">
+            <input placeholder="@L.T("Filtern nach Name oder Nummer", "Filter by name or number")" value="@filter" @oninput="e => filter = e.Value?.ToString()?.Trim() ?? string.Empty" />
+            <label class="check">
+                <input type="checkbox" checked="@onlyKnown" @onchange="e => onlyKnown = e.Value is true" />
+                @L.T("Nur benannte", "Named only")
+            </label>
+        </div>
+        <div class="dialog-body">
+            <ul class="flag-rows">
+                @foreach (var i in Visible.Take(shown))
+                {
+                    var index = i;
+                    <li>
+                        <span class="flag-index">@index</span>
+                        <span class="flag-name">@names[index]</span>
+                        <input type="number" min="@Min" max="@Max" value="@Get(index)" @onchange="e => SetValue(index, e.Value)" />
+                    </li>
+                }
+            </ul>
+            @if (Visible.Count() > shown)
+            {
+                <div class="more"><button @onclick="() => shown += 200">@L.T("Mehr anzeigen", "Show more")</button></div>
+            }
+        </div>
+        <footer class="dialog-foot">
+            <span class="hint">@(message ?? L.T("Änderungen gelten sofort. Die Namen sind die internen Namen aus NHSE.", "Changes apply at once. The names are NHSE's internal names."))</span>
+            <div class="foot-buttons">
+                <button class="small" @onclick="Export">@L.T("Sichern (.nhfl)", "Save (.nhfl)")</button>
+                <label class="button small">
+                    @L.T("Laden", "Load")
+                    <InputFile accept=".nhfl" OnChange="Import" />
+                </label>
+            </div>
+        </footer>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public int Count { get; set; }
+    [Parameter, EditorRequired] public Func<int, long> Get { get; set; } = null!;
+    [Parameter, EditorRequired] public Action<int, long> Set { get; set; } = null!;
+    /// <summary>NHSE's description of a flag ("12 - Name = 3"), or null when the flag has no name.</summary>
+    [Parameter, EditorRequired] public Func<int, string?> Describe { get; set; } = null!;
+    [Parameter] public long Min { get; set; } = short.MinValue;
+    [Parameter] public long Max { get; set; } = short.MaxValue;
+    /// <summary>Bytes per flag in the .nhfl file (2 for counters, 1 for a villager's memory).</summary>
+    [Parameter] public int ElementSize { get; set; } = 2;
+    [Parameter] public string FileName { get; set; } = "flags";
+    /// <summary>Called after values changed, to write them back.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private string[] names = [];
+    private string filter = string.Empty;
+    private bool onlyKnown = true;
+    private int shown = 200;
+    private string? message;
+
+    protected override void OnInitialized()
+    {
+        names = new string[Count];
+        for (int i = 0; i < Count; i++)
+            names[i] = Describe(i) ?? string.Empty;
+    }
+
+    private IEnumerable<int> Visible => Enumerable.Range(0, Count).Where(i =>
+        (!onlyKnown || names[i].Length > 0)
+        && (filter.Length == 0 || names[i].Contains(filter, StringComparison.OrdinalIgnoreCase) || i.ToString() == filter));
+
+    private async Task SetValue(int index, object? value)
+    {
+        if (!long.TryParse(value?.ToString(), out var v))
+            return;
+        Set(index, Math.Clamp(v, Min, Max));
+        message = null;
+        await Changed.InvokeAsync();
+    }
+
+    private byte[] Dump()
+    {
+        var data = new byte[Count * ElementSize];
+        for (int i = 0; i < Count; i++)
+        {
+            var v = Get(i);
+            if (ElementSize == 1)
+                data[i] = (byte)v;
+            else
+                BitConverter.GetBytes((ushort)v).CopyTo(data, i * 2);
+        }
+        return data;
+    }
+
+    private Task Export() => Files.Save(Session, $"{FileName}.nhfl", Dump());
+
+    private async Task Import(InputFileChangeEventArgs e)
+    {
+        var expect = Count * ElementSize;
+        var data = await Files.Read(e.File, expect);
+        if (data is null || data.Length != expect)
+        {
+            message = IslandMap.SizeError((int)e.File.Size, expect);
+            return;
+        }
+        for (int i = 0; i < Count; i++)
+        {
+            long v = ElementSize == 1 ? data[i] : Min < 0 ? BitConverter.ToInt16(data, i * 2) : BitConverter.ToUInt16(data, i * 2);
+            Set(i, v);
+        }
+        message = L.T("Geladen.", "Loaded.");
+        await Changed.InvokeAsync();
+    }
+
+    private Task Close() => Closed.InvokeAsync();
+}

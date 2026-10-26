@@ -500,3 +500,28 @@ footer { margin-top: 34px; color: var(--muted); font-size: 0.85rem; line-height:
 }
 .room-item img { width: 100%; height: 100%; object-fit: contain; }
 .room-item.selected { border-color: var(--sea); background: var(--sea-soft); }
+
+/* raw values like NHSE */
+.raw-values { margin-top: 12px; }
+.raw-values summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+.raw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin: 10px 0; }
+.raw-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+.raw-grid input, .raw-grid select { width: 100%; }
+.file-rows { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.file-rows li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.file-rows li > span:first-child { flex: 1; min-width: 180px; }
+.slot-field { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; font-size: 0.85rem; color: var(--muted); }
+.surfaces { display: flex; gap: 18px; flex-wrap: wrap; margin: 8px 0 12px; }
+.flag-rows { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.flag-rows li { display: grid; grid-template-columns: 52px 1fr 96px; gap: 8px; align-items: center; font-size: 0.85rem; }
+.flag-index { color: var(--muted); font-variant-numeric: tabular-nums; }
+.flag-name { overflow-wrap: anywhere; }
+.flag-rows input { width: 100%; }
+.mail-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
+.mail { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 8px 12px; }
+.mail img { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; }
+.mail-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.mail-text .hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail.unread strong::after { content: ' \2022'; color: var(--warn); }
+.letter { display: grid; gap: 8px; margin: 12px 0; }
+.letter textarea { width: 100%; font: inherit; resize: vertical; }

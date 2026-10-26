@@ -1,0 +1,99 @@
+@inject SaveSession Session
+
+<section class="card">
+    <header class="card-head">
+        <h3 class="with-icon"><img src="menuicon/MyDesignPro.png" alt="" />@L.T("Designs auf dem Boden", "Designs on the ground")</h3>
+    </header>
+    <p>@L.T($"{placed} Felder der Insel tragen ein Design, zum Beispiel als Weg.", $"{placed} tiles of the island carry a design, for example as a path.")</p>
+    <div class="buttons">
+        <button class="danger" disabled="@(placed == 0)" @onclick="Clear">@(confirm ? L.T("Wirklich alle entfernen?", "Really remove them all?") : L.T("Alle entfernen", "Remove all"))</button>
+        <button @onclick="Export">@L.T("Als Datei sichern (.nhmd)", "Save as a file (.nhmd)")</button>
+        <label class="button">
+            @L.T("Aus Datei laden (.nhmd)", "Load from a file (.nhmd)")
+            <InputFile accept=".nhmd" OnChange="Import" />
+        </label>
+    </div>
+    @if (message is not null)
+    {
+        <p class="hint">@message</p>
+    }
+    <p class="hint">@L.T("Wie in NHSE: die Datei enthält nur, welches Design auf welchem Feld liegt. Die Designs selbst bleiben in deinen Designplätzen, lade sie also auf derselben Insel oder mit denselben Designs.",
+                         "Like NHSE: the file only holds which design lies on which tile. The designs themselves stay in your design slots, so load it on the same island or with the same designs.")</p>
+</section>
+
+@code {
+    // since 2.0 the grid is 9 x 6 acres (one extra acre left and right), before that 7 x 6; NHSE pads old files
+    private const int SizeNew = 0x6C00;
+    private const int SizeOld = 0x5400;
+
+    private int placed;
+    private bool confirm;
+    private string? message;
+
+    private MainSave Main => Session.Save!.Main;
+    private (int W, int H) Grid => Main.Info.GetKnownRevisionIndex() >= 31 ? (9, 6) : (7, 6);
+
+    protected override void OnInitialized() => Count();
+
+    private void Count()
+    {
+        var (w, h) = Grid;
+        placed = Main.GetMapDesignTiles(w, h).Count(t => t != MainSave.MapDesignNone);
+    }
+
+    private void Clear()
+    {
+        if (!confirm)
+        {
+            confirm = true;
+            return;
+        }
+        confirm = false;
+        var (w, h) = Grid;
+        Main.ClearDesignTiles(w, h);
+        Session.MarkDirty();
+        message = L.T("Alle Designs vom Boden entfernt.", "Removed all designs from the ground.");
+        Count();
+    }
+
+    private async Task Export()
+    {
+        var (w, h) = Grid;
+        await Files.Save(Session, "Island MyDesignMap.nhmd", Main.MapDesignTileData(w, h).ToArray());
+    }
+
+    private async Task Import(InputFileChangeEventArgs e)
+    {
+        var (w, h) = Grid;
+        var target = Main.MapDesignTileData(w, h);
+        var data = await Files.Read(e.File, SizeNew * 2);
+        if (data is null)
+        {
+            message = L.T("Die Datei ist zu groß für eine .nhmd-Datei.", "The file is too big for an .nhmd file.");
+            return;
+        }
+        if (data.Length == SizeOld && target.Length == SizeNew)
+        {
+            // an acre of empty columns on both sides, as NHSE does
+            var pad = BitConverter.GetBytes(MainSave.MapDesignNone);
+            var padded = new byte[SizeNew];
+            for (int i = 0; i < padded.Length; i += 2)
+                pad.CopyTo(padded, i);
+            data.CopyTo(padded, (SizeNew - SizeOld) / 2);
+            data = padded;
+        }
+        else if (data.Length > target.Length)
+        {
+            data = data[..target.Length]; // older NHSE dumps carried extra bytes after the tiles
+        }
+        if (data.Length != target.Length)
+        {
+            message = L.T($"Die Datei hat {data.Length} Bytes, erwartet sind {target.Length}.", $"The file has {data.Length} bytes, {target.Length} are expected.");
+            return;
+        }
+        data.CopyTo(target.Span);
+        Session.MarkDirty();
+        message = L.T("Designs auf dem Boden geladen.", "Loaded the designs on the ground.");
+        Count();
+    }
+}

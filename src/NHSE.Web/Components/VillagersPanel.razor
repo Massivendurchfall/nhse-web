@@ -55,6 +55,7 @@
             <img src="menuicon/Love.png" alt="" />
             @(friendsDone ? L.T("Alle sind beste Freunde", "Everyone is a best friend") : L.T("Freundschaft mit allen auf Maximum", "Max friendship with everyone"))
         </button>
+        <button @onclick="AllMoveOut">@(confirmMoveOut ? L.T("Wirklich alle ausziehen lassen?", "Really let everyone move out?") : L.T("Alle ausziehen lassen", "Let everyone move out"))</button>
     </div>
     @if (error is not null)
     {
@@ -64,7 +65,9 @@
 
 @if (details >= 0)
 {
-    <VillagerDetailsDialog Villager="@villagers[details]" Changed="() => Store(details)" Closed="() => details = -1" />
+    <VillagerDetailsDialog Villager="@villagers[details]" House="@HouseOf(details)" Host="@Session.Save!.Players[0].Personal"
+                           Changed="() => Store(details)" HouseChanged="h => StoreHouse(details, h)" Replaced="v => Replace(details, v)"
+                           Closed="() => details = -1" />
 }
 
 @if (picking >= 0)
@@ -89,7 +92,51 @@
 
     protected override void OnInitialized() => Load();
 
-    private void Load() => villagers = Main.GetVillagers();
+    private IVillagerHouse[] houses = [];
+    private bool confirmMoveOut;
+
+    private void Load()
+    {
+        villagers = Main.GetVillagers();
+        houses = Main.GetVillagerHouses();
+    }
+
+    private IVillagerHouse? HouseOf(int index) => houses.FirstOrDefault(h => h.NPC1 == index);
+
+    private void StoreHouse(int index, IVillagerHouse house)
+    {
+        var slot = Array.FindIndex(houses, h => h.NPC1 == index);
+        if (slot < 0)
+            return;
+        houses[slot] = house;
+        Main.SetVillagerHouse(house, slot);
+        Session.MarkDirty();
+    }
+
+    private void Replace(int index, IVillager villager)
+    {
+        villagers[index] = villager;
+        Store(index);
+    }
+
+    // like NHSE's "move out all": every resident gets the moving out mark
+    private void AllMoveOut()
+    {
+        if (!confirmMoveOut)
+        {
+            confirmMoveOut = true;
+            return;
+        }
+        confirmMoveOut = false;
+        for (int i = 0; i < villagers.Length; i++)
+        {
+            if (VillagerCatalog.IsEmpty(villagers[i]))
+                continue;
+            villagers[i].MovingOut = true;
+            Main.SetVillager(villagers[i], i);
+        }
+        Session.MarkDirty();
+    }
 
     private void Store(int index)
     {

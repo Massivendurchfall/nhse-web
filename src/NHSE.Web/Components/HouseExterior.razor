@@ -1,0 +1,114 @@
+@inject ItemCatalog Catalog
+
+@* The outside of a house like NHSE's house editors: level, roof, walls, door and the decoration on the door. *@
+<div class="profile-fields">
+    <label>
+        <span>@L.T("Ausbaustufe", "Upgrade level")</span>
+        <input type="number" min="0" max="10" value="@House.HouseLevel" @onchange="SetLevel" />
+    </label>
+    <label>
+        <span>@L.T("Dach", "Roof")</span>
+        <select @onchange="e => Set(Part.Roof, e.Value)">
+            @foreach (var (value, label) in Options<RoofType>("HouseRoof", (ushort)House.RoofUniqueID))
+            {
+                <option value="@value" selected="@(value == (ushort)House.RoofUniqueID)">@label</option>
+            }
+        </select>
+    </label>
+    <label>
+        <span>@L.T("Wände", "Walls")</span>
+        <select @onchange="e => Set(Part.Wall, e.Value)">
+            @foreach (var (value, label) in Options<WallType>("HouseWall", (ushort)House.WallUniqueID))
+            {
+                <option value="@value" selected="@(value == (ushort)House.WallUniqueID)">@label</option>
+            }
+        </select>
+    </label>
+    <label>
+        <span>@L.T("Tür", "Door")</span>
+        <select @onchange="e => Set(Part.Door, e.Value)">
+            @foreach (var (value, label) in Options<DoorKind>("HouseDoor", (ushort)House.DoorUniqueID))
+            {
+                <option value="@value" selected="@(value == (ushort)House.DoorUniqueID)">@label</option>
+            }
+        </select>
+    </label>
+    <div class="slot-field">
+        <span>@L.T("Türschmuck", "Door decoration")</span>
+        <ItemSlot Item="@House.DoorDecoItemName" OnClick="() => picking = true" />
+    </div>
+</div>
+<p class="hint">@L.T("Die Namen sind die internen Modelle des Spiels wie in NHSE: der Buchstabe am Ende ist die Farbe, PA bis PD die Hausform für Spieler, NA bis ND für Bewohner. Geändert wird auch die Bestellung bei Nook, damit das Spiel am nächsten Tag nichts zurückstellt.",
+                     "The names are the game's internal models like in NHSE: the letter at the end is the colour, PA to PD the house shape for players, NA to ND for villagers. The order at Nook's is changed too, so the game does not switch back the next day.")</p>
+
+@if (picking)
+{
+    <ItemPickerDialog Title="@L.T("Türschmuck", "Door decoration")" Current="@House.DoorDecoItemName" CanClear="@(!House.DoorDecoItemName.IsNone)"
+                      Picked="SetDeco" Cleared="() => SetDeco(new Item())" Closed="() => picking = false" />
+}
+
+@code {
+    private enum Part { Roof, Wall, Door }
+
+    [Parameter, EditorRequired] public IHouseInfo House { get; set; } = null!;
+    /// <summary>Player houses list the player models first, villager houses the villager ones.</summary>
+    [Parameter] public bool ForPlayer { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private bool picking;
+
+    protected override Task OnInitializedAsync() => Catalog.EnsureLoadedAsync();
+
+    // "HouseRoofPA04StandardB" becomes "PA04 Standard B"; the house kind of this house comes first
+    private IEnumerable<(ushort Value, string Label)> Options<T>(string prefix, ushort current) where T : struct, Enum
+    {
+        var own = ForPlayer ? "P" : "N";
+        return Enum.GetValues<T>()
+            .Select(v => (Value: Convert.ToUInt16(v), Name: v.ToString()))
+            .Where(v => v.Name.StartsWith(prefix, StringComparison.Ordinal) || v.Value == current)
+            .Select(v => (v.Value, Label: Readable(v.Name, prefix)))
+            .OrderBy(v => v.Label.StartsWith(own, StringComparison.Ordinal) ? 0 : 1)
+            .ThenBy(v => v.Label, StringComparer.Ordinal);
+    }
+
+    private static string Readable(string name, string prefix)
+    {
+        var rest = name.StartsWith(prefix, StringComparison.Ordinal) ? name[prefix.Length..] : name;
+        var spaced = System.Text.RegularExpressions.Regex.Replace(rest, "(?<=[a-z0-9])(?=[A-Z])", " ");
+        return spaced.Length > 0 ? spaced : name;
+    }
+
+    private async Task SetLevel(ChangeEventArgs e)
+    {
+        if (!uint.TryParse(e.Value?.ToString(), out var level))
+            return;
+        House.HouseLevel = Math.Min(level, 10);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Set(Part part, object? value)
+    {
+        if (!ushort.TryParse(value?.ToString(), out var v))
+            return;
+        switch (part)
+        {
+            case Part.Roof:
+                House.RoofUniqueID = House.OrderRoofUniqueID = (RoofType)v;
+                break;
+            case Part.Wall:
+                House.WallUniqueID = House.OrderWallUniqueID = (WallType)v;
+                break;
+            default:
+                House.DoorUniqueID = House.OrderDoorUniqueID = (DoorKind)v;
+                break;
+        }
+        await Changed.InvokeAsync();
+    }
+
+    private async Task SetDeco(Item item)
+    {
+        picking = false;
+        House.DoorDecoItemName = item;
+        await Changed.InvokeAsync();
+    }
+}

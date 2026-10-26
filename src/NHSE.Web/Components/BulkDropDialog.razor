@@ -1,0 +1,137 @@
+@inject ItemCatalog Catalog
+
+<div class="dialog-backdrop" @onclick="Close">
+    <div class="dialog" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+        <header class="dialog-head">
+            <h3>@L.T("Viele Gegenstände hinlegen", "Drop many items")</h3>
+            <button class="icon-button" aria-label="@L.T("Schließen", "Close")" @onclick="Close">&#x2715;</button>
+        </header>
+
+        <div class="dialog-body">
+            <nav class="categories inline">
+                @foreach (var s in Enum.GetValues<Source>())
+                {
+                    var src = s;
+                    <button class="category @(source == src ? "active" : "")" @onclick="() => source = src">
+                        <img src="@Icon(src)" alt="" />
+                        <span>@Name(src)</span>
+                    </button>
+                }
+            </nav>
+
+            @switch (source)
+            {
+                case Source.Recipes:
+                    <label class="check">
+                        <input type="checkbox" checked="@onlyMissing" @onchange="e => onlyMissing = e.Value is true" />
+                        @L.T($"Nur Rezepte, die {Player?.Personal.PlayerName} noch nicht kennt", $"Only recipes {Player?.Personal.PlayerName} does not know yet")
+                    </label>
+                    break;
+                case Source.Search:
+                    <div class="filter">
+                        <input placeholder="@L.T("Name enthält, z. B. Holz oder Kirschblüte", "Name contains, e.g. wooden or cherry-blossom")" value="@search" @oninput="e => search = e.Value?.ToString()?.Trim() ?? string.Empty" />
+                    </div>
+                    break;
+                case Source.Brush when Brush is null:
+                    <p class="hint">@L.T("Wähle auf der Karte unter „Setzen“ zuerst einen Gegenstand.", "Choose an item under \"Place\" on the map first.")</p>
+                    break;
+                case Source.Brush:
+                    <div class="stepper">
+                        <button @onclick="() => copies = Math.Max(1, copies - 1)" disabled="@(copies <= 1)">&#x2212;</button>
+                        <span>@copies</span>
+                        <button @onclick="() => copies = Math.Min(400, copies + 1)">+</button>
+                        <button class="small" @onclick="() => copies = Math.Min(400, copies + 10)">+10</button>
+                    </div>
+                    break;
+            }
+
+            <div class="tiles">
+                @foreach (var item in Items.Take(60))
+                {
+                    <div class="tile" title="@GameInfo.Strings.GetItemName(item)">
+                        <ItemImage Src="@Catalog.PictureOf(item)" Alt="@GameInfo.Strings.GetItemName(item)" />
+                        <span>@GameInfo.Strings.GetItemName(item)</span>
+                    </div>
+                }
+            </div>
+            @if (Items.Count > 60)
+            {
+                <p class="hint center">@L.T($"und {Items.Count - 60} weitere", $"and {Items.Count - 60} more")</p>
+            }
+            <p class="hint">@L.T("Alles wird wie fallen gelassen in den Bereich gelegt, ein Gegenstand je Feld. Belegte Felder bleiben frei, was nicht mehr passt, bleibt weg.",
+                                 "Everything is dropped into the area, one item per tile. Taken tiles are skipped, whatever does not fit is left out.")</p>
+        </div>
+
+        <footer class="dialog-foot">
+            <span class="hint">@L.T($"{Items.Count} Gegenstände, im Bereich ist Platz für {Room}", $"{Items.Count} items, the area has room for {Room}")</span>
+            <div class="foot-buttons">
+                <button class="primary" disabled="@(Items.Count == 0)" @onclick="Confirm">@L.T("Hinlegen", "Drop")</button>
+            </div>
+        </footer>
+    </div>
+</div>
+
+@code {
+    private enum Source { Recipes, Search, Storage, Pockets, Brush }
+
+    [Parameter] public Player? Player { get; set; }
+    [Parameter] public Item? Brush { get; set; }
+    [Parameter] public int Room { get; set; }
+    [Parameter] public EventCallback<IReadOnlyList<Item>> Drop { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private Source source = Source.Recipes;
+    private bool onlyMissing = true;
+    private string search = string.Empty;
+    private int copies = 10;
+
+    protected override Task OnInitializedAsync() => Catalog.EnsureLoadedAsync();
+
+    private static string Name(Source s) => s switch
+    {
+        Source.Recipes => L.T("Alle Rezepte", "All recipes"),
+        Source.Search => L.T("Suche im Katalog", "Catalog search"),
+        Source.Storage => L.T("Inhalt des Lagers", "Home storage"),
+        Source.Pockets => L.T("Inhalt der Taschen", "Pockets"),
+        _ => L.T("Ein Gegenstand mehrfach", "One item many times"),
+    };
+
+    private static string Icon(Source s) => s switch
+    {
+        Source.Recipes => "menuicon/PaperRecipe.png",
+        Source.Search => "menuicon/Leaf.png",
+        Source.Storage => "menuicon/Cardboard.png",
+        Source.Pockets => "menuicon/Present.png",
+        _ => "menuicon/Branch.png",
+    };
+
+    // field items (plants) cannot lie around, everything else goes in as it is, the drop flag set later
+    private IReadOnlyList<Item> Items => source switch
+    {
+        Source.Recipes => [.. Recipes()],
+        Source.Search when search.Length >= 2 => [.. Catalog.Items
+            .Where(e => e.Id < Item.FieldItemMin && e.Name.Contains(search, StringComparison.CurrentCultureIgnoreCase))
+            .Select(e => new Item(e.Id))],
+        Source.Storage when Player is not null => [.. Player.Personal.ItemChest.Where(i => !i.IsNone && !i.IsFieldItem).Select(Copy)],
+        Source.Pockets when Player is not null => [.. Player.Personal.Pocket.Concat(Player.Personal.Bag).Where(i => !i.IsNone && !i.IsFieldItem).Select(Copy)],
+        Source.Brush when Brush is { IsFieldItem: false } b => [.. Enumerable.Range(0, copies).Select(_ => Copy(b))],
+        _ => [],
+    };
+
+    private static Item Copy(Item item) => new(item.RawValue);
+
+    // like NHSE's bulk spawn: every recipe except the two kits the game hands out itself, sorted by name
+    private IEnumerable<Item> Recipes()
+    {
+        var book = Player?.Personal.GetRecipeBook();
+        return RecipeList.Recipes.Keys
+            .Where(id => id is not (RecipeList.BridgeConstructionKit or RecipeList.CampsiteConstructionKit))
+            .Where(id => !onlyMissing || book is null || !book.GetIsKnown(id))
+            .Select(id => new Item(Item.DIYRecipe) { FreeParam = id })
+            .OrderBy(i => GameInfo.Strings.GetItemName(i), StringComparer.CurrentCultureIgnoreCase);
+    }
+
+    private Task Confirm() => Drop.InvokeAsync(Items);
+
+    private Task Close() => Closed.InvokeAsync();
+}

@@ -1,0 +1,90 @@
+@using System.Buffers.Binary
+@using System.Text
+@inject SaveSession Session
+
+@* The notes on the bulletin board, read and written straight in main.dat (the whole board is 900 KB). *@
+<details class="card museum-details">
+    <summary>@L.T($"Schwarzes Brett ({posts.Count} Beiträge)", $"Bulletin board ({posts.Count} notes)")</summary>
+    @foreach (var p in posts)
+    {
+        var post = p;
+        <div class="note">
+            <div class="profile-fields">
+                <label><span>@L.T("Datum", "Date")</span><input type="date" value="@post.Date.ToString("yyyy-MM-dd")" @onchange="e => SetDate(post.Slot, e.Value)" /></label>
+                <label><span>@L.T("Unterschrift", "Signature")</span><input maxlength="@FooterChars" value="@post.Footer" @onchange="e => SetText(post.Slot, FooterOffset, FooterChars, e.Value)" /></label>
+            </div>
+            <textarea rows="6" maxlength="@BodyChars" @onchange="e => SetText(post.Slot, BodyOffset, BodyChars, e.Value)">@post.Body</textarea>
+        </div>
+    }
+    <p class="hint">@L.T("Text, Unterschrift und Datum lassen sich ändern wie in NHSE. Neue Beiträge schreibst du am Brett im Spiel, deren Reihenfolge ist nirgends beschrieben.",
+                         "Text, signature and date can be changed like in NHSE. New notes are written at the board in the game, their order is not documented anywhere.")</p>
+</details>
+
+@code {
+    private sealed record Post(int Slot, DateTime Date, string Body, string Footer);
+
+    // GSaveBulletinBoard: date and flag, then 30 notes of 0x77D0 bytes (NHSE's GSaveBBS)
+    private const int StockOffset = 8;
+    private const int PostSize = 0x77D0;
+    private const int Count = 30;
+    private const int BodyOffset = 4;
+    private const int BodyChars = 240;
+    private const int FooterOffset = 0x1E4;
+    private const int FooterChars = 48;
+    private const int UniqueIdOffset = 0x77C8;
+
+    private List<Post> posts = [];
+
+    private MainSave Main => Session.Save!.Main;
+
+    private Span<byte> PostData(int slot) => Main.Data.Slice(Main.Offsets.BulletinBoard + StockOffset + (slot * PostSize), PostSize);
+
+    protected override void OnInitialized() => Load();
+
+    // newest first, as the board shows them
+    private void Load()
+    {
+        var list = new List<(uint Id, Post Post)>();
+        for (int i = 0; i < Count; i++)
+        {
+            var d = PostData(i);
+            var year = BinaryPrimitives.ReadUInt16LittleEndian(d);
+            if (year == 0)
+                continue;
+            var date = d[2] is >= 1 and <= 12 && d[3] >= 1 && d[3] <= DateTime.DaysInMonth(year, d[2]) ? new DateTime(year, d[2], d[3]) : new DateTime(year, 1, 1);
+            list.Add((BinaryPrimitives.ReadUInt32LittleEndian(d[UniqueIdOffset..]), new Post(i, date, Text(d, BodyOffset, BodyChars), Text(d, FooterOffset, FooterChars))));
+        }
+        posts = list.OrderByDescending(p => p.Id).Select(p => p.Post).ToList();
+    }
+
+    private static string Text(ReadOnlySpan<byte> data, int offset, int chars)
+    {
+        var text = Encoding.Unicode.GetString(data.Slice(offset, chars * 2));
+        var end = text.IndexOf('\0');
+        return end < 0 ? text : text[..end];
+    }
+
+    private void SetText(int slot, int offset, int chars, object? value)
+    {
+        var text = (value?.ToString() ?? string.Empty).Replace("\r\n", "\n");
+        if (text.Length > chars - 1)
+            text = text[..(chars - 1)];
+        var target = PostData(slot).Slice(offset, chars * 2);
+        target.Clear();
+        Encoding.Unicode.GetBytes(text).CopyTo(target);
+        Session.MarkDirty();
+        Load();
+    }
+
+    private void SetDate(int slot, object? value)
+    {
+        if (!DateTime.TryParse(value?.ToString(), out var date))
+            return;
+        var d = PostData(slot);
+        BinaryPrimitives.WriteUInt16LittleEndian(d, (ushort)date.Year);
+        d[2] = (byte)date.Month;
+        d[3] = (byte)date.Day;
+        Session.MarkDirty();
+        Load();
+    }
+}

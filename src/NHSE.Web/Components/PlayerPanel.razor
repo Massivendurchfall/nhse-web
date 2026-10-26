@@ -71,8 +71,25 @@
     </div>
 </section>
 
+<section class="card">
+    <header class="card-head">
+        <h3>@L.T("Flags wie in NHSE", "Flags like NHSE")</h3>
+        <button class="small" @onclick="() => playerFlags = Personal.GetEventFlagsPlayer()">@L.T("Spieler-Flags", "Player flags")</button>
+    </header>
+    <p class="hint">@L.T("Zähler und Schalter, mit denen das Spiel festhält, was dieser Spieler schon erlebt hat. Nur ändern, wenn du weißt, was ein Flag tut.",
+                         "Counters and switches the game uses to remember what this player already went through. Only change one if you know what it does.")</p>
+</section>
+
+@if (playerFlags is { } pf)
+{
+    <FlagListDialog Title="@L.T($"Flags von {Personal.PlayerName}", $"Flags of {Personal.PlayerName}")" Count="@pf.Length" Get="i => pf[i]" Set="(i, v) => pf[i] = (short)v"
+                    Describe="FlagNames.Player" FileName="EventFlagPlayer" Changed="() => { Personal.SetEventFlagsPlayer(pf); Session.MarkDirty(); }" Closed="() => playerFlags = null" />
+}
+
 @code {
     [Parameter, EditorRequired] public Player Player { get; set; } = null!;
+
+    private short[]? playerFlags;
 
     private Personal Personal => Player.Personal;
     private string name = string.Empty;
