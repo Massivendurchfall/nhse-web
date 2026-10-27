@@ -47,14 +47,14 @@ dotnet run --project src/NHSE.Web
 - The villager swap is NHSE.Villagers' `VillagerSwap`, also unchanged. Its 37 MB of villager templates are not embedded: the build serves them from `villagers/` and the app fetches the two files of a villager when it moves in (`src/NHSE.Core.Web/Villagers/VillagerResources.cs`).
 - `src/NHSE.Web` is the Blazor WebAssembly app. Folder access uses the File System Access API, with a folder upload and ZIP fallback for other browsers.
 - The three NHSE structures with bool arrays (achievements, reactions, visitors) are compiled from patched copies in `src/NHSE.Core.Web/Patched`: the WebAssembly marshaller ignores `ArraySubType = UnmanagedType.I1` and writes 4 bytes per flag, which overflowed into the data behind them. The copies store the flags as bytes. The struct converter is patched too: on WebAssembly a `ByValTStr` string is only written up to its terminator, so the buffer is cleared first instead of keeping random bytes after short names.
-- `tools/build_catalog.py` builds `wwwroot/data/catalog.json` from the Norviah/animal-crossing data. It maps item IDs to pictures and categories; item names come from NHSE in the player's language.
+- `tools/build_catalog.py` builds `wwwroot/data/catalog.json` from an xlsx export of the [community data spreadsheet for ACNH](https://tinyurl.com/acnh-sheet), which covers the game up to 3.0. It maps item IDs to pictures and categories; item names come from NHSE in the player's language. Items the spreadsheet does not list (bell bags, kits, mailboxes, ...) get NHSE's inventory icon.
 - `tools/SaveCheck` checks the managed AES against .NET's AES, loads a save folder, verifies every hash and runs a save round trip. Use it on a copy of a save only.
 
 ## Credits and license
 
 - [NHSE](https://github.com/kwsch/NHSE) by kwsch and contributors, GPL-3.0. The menu icons and villager pictures come from NHSE.Sprites, the villager templates from NHSE.Villagers.
-- Item data from [Norviah/animal-crossing](https://github.com/Norviah/animal-crossing), MIT, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
-- Item pictures are loaded from [acnhcdn.com](https://acnhcdn.com) and are not part of this repository.
+- Item pictures and data from the [community data spreadsheet for ACNH](https://tinyurl.com/acnh-sheet); achievement data from [Norviah/animal-crossing](https://github.com/Norviah/animal-crossing), MIT, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+- Item pictures are loaded from [nh-cdn.catalogue.ac](https://catalogue.ac) and are not part of this repository.
 - Animal Crossing is a trademark of Nintendo. This project is not affiliated with or endorsed by Nintendo.
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).

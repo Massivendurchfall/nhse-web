@@ -28,7 +28,7 @@ public sealed class ItemCatalog(HttpClient http)
 
     private readonly Dictionary<ushort, Entry> byId = [];
     private Task? loading;
-    private string baseUrl = "https://acnhcdn.com/latest/";
+    private string baseUrl = "https://nh-cdn.catalogue.ac/";
 
     public IReadOnlyList<Entry> Items { get; private set; } = [];
     public bool Loaded { get; private set; }

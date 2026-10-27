@@ -4,9 +4,13 @@
 
 `external/NHSE` and the code compiled from it, the menu icons in `src/NHSE.Web/wwwroot/menuicon`, and the villager templates and pictures the build publishes as `villagers/` and `villagericon/` come from [NHSE](https://github.com/kwsch/NHSE) by kwsch and contributors, licensed under the GNU General Public License v3.0 (see [LICENSE](LICENSE)).
 
+## Data spreadsheet for Animal Crossing: New Horizons
+
+`src/NHSE.Web/wwwroot/data/catalog.json` is generated from the community [data spreadsheet for ACNH](https://tinyurl.com/acnh-sheet), whose authors welcome the use of their data in apps and ask for a link back to the spreadsheet. Its pictures are credited to AeonSake.
+
 ## Norviah/animal-crossing
 
-`src/NHSE.Web/wwwroot/data/catalog.json` and `achievements.json` are generated from the data of [Norviah/animal-crossing](https://github.com/Norviah/animal-crossing):
+`src/NHSE.Web/wwwroot/data/achievements.json` is generated from the data of [Norviah/animal-crossing](https://github.com/Norviah/animal-crossing):
 
 ```
 MIT License
@@ -34,4 +38,4 @@ SOFTWARE.
 
 ## Item pictures
 
-Item pictures are loaded at runtime from [acnhcdn.com](https://acnhcdn.com). They are not included in this repository or the published site. Animal Crossing and its assets are property of Nintendo.
+Item pictures are loaded at runtime from [nh-cdn.catalogue.ac](https://catalogue.ac), the image host the spreadsheet links to. They are not included in this repository or the published site. Animal Crossing and its assets are property of Nintendo.
