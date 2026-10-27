@@ -7,7 +7,7 @@ A save editor for Animal Crossing: New Horizons that runs entirely in your brows
 ## Features
 
 - **Player:** name, island name, wallet, bank and Nook Miles, with the passport photo; the raw player event flags with their names, also as `.nhfl` files
-- **Pockets:** pick items from a picture grid with categories (construction, moving and ladder kits in a category of their own), furniture variants and stack size; 20, 30 or 40 slots, or any count like NHSE
+- **Pockets:** pick any of NHSE's items (also everything from version 3.0, songs and bell bags, with NHSE's icon where no picture exists) from a picture grid with categories (construction, moving and ladder kits in a category of their own), furniture variants and stack size; 20, 30 or 40 slots, or any count like NHSE
 - **Item details:** wrapping (paper, present, box, colour), flower genes and watering, the recipe on a DIY card, the fossil in an unknown fossil, uses and the raw values, in every item picker and on the map
 - **Home storage:** the same picture picker for every storage slot, add to the first free slot, expand to the largest size
 - **Unlock:** all DIY recipes (also marked as crafted) and all reactions, the catalog (everything, furniture and clothing, fish, bugs, sea creatures or art, with all colour variants) and the Nook Miles achievements, all at once or one by one
